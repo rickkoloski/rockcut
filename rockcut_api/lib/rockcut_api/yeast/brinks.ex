@@ -21,7 +21,17 @@ defmodule RockcutApi.Yeast.Brinks do
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Ingredients.{Product, Products}
   alias RockcutApi.Production.Batches
-  alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvest, HarvestProduct, Harvests}
+
+  alias RockcutApi.Yeast.{
+    BoardTasks,
+    Brink,
+    Count,
+    Counts,
+    Entry,
+    Harvest,
+    HarvestProduct,
+    Harvests
+  }
 
   ## Settings
 
@@ -241,7 +251,9 @@ defmodule RockcutApi.Yeast.Brinks do
               viable_millions_per_ml: c.viable_millions_per_ml,
               viability_pct: c.viability_pct,
               note: c.note,
-              entered_by: c.entered_by && %{id: c.entered_by.id, name: c.entered_by.name}
+              entered_by: c.entered_by && %{id: c.entered_by.id, name: c.entered_by.name},
+              # Gap 15: before who's asking, as `removable` above.
+              changeable: is_nil(Counts.change_refusal(c, h.entries))
             }
           end)
       }

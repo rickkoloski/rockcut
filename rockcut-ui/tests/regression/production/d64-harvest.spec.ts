@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { batchOf, openGantt, snack, stepOf, today, undo, type SBatch } from './schedule'
 import { apiAs } from './helpers'
-import { addCount, brink, fillHarvest, history, pitchFrom, Yeast, yeastProduct } from './yeast'
+import { addCount, brink, brinkAnswer, fillHarvest, history, pitchFrom, Yeast, yeastProduct } from './yeast'
 
 // D64 Stop 3 (spec §5, decisions 10–17): the Yeast harvest step's check-off on
 // the Gantt opens the Harvest dialog: Harvest yeast (brink with states, the
@@ -127,6 +127,40 @@ test('a dirty brink asks first; Cancel keeps the dialog, Record anyway saves and
   await page.getByTestId('harvest-question-dirty').getByRole('button', { name: 'Record anyway' }).click()
   await expect(snack(page)).toHaveText(`Yeast harvest done · 20 lb → ${tb.name}.`)
   expect((await brink(tb.id))!.dirty).toBe(false)
+})
+
+test('gap 19: the yeast changed while it was asked about: asked again with the brink as it is now, nothing written until answered', async ({ page }) => {
+  const us05 = await yeastProduct('US-05')
+  const tb = await yeast.brink('YB-stale')
+  const [a, b] = [await yeast.brewed('Galactic'), await yeast.brewed('Enos')]
+  const api = await apiAs('brewer1')
+  const other = await apiAs('brewer2')
+  const first = stepOf(a, 'Yeast harvest')
+  const fields = { done_on: first.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_product_ids: [us05.id], yeast_generation: 1 }
+  expect((await api.post(`/api/production/steps/${first.id}/complete`, { data: { ...fields, yeast_lb: '12' } })).status()).toBe(200)
+
+  const s = await checkOff(page, b, 'Yeast harvest')
+  const d = await fillHarvest(page, { brinkId: tb.id, lb: '9', strainId: us05.id })
+  await d.getByRole('button', { name: 'Save' }).click()
+  const q = page.getByTestId('harvest-question-has-yeast')
+  await expect(q.getByTestId('harvest-question-now')).toHaveText(`${tb.name} · 12 lb US-05 gen 1`)
+
+  // brewer2's second pull answers "This brink is empty" first.
+  const second = stepOf(a, 'Yeast harvest - #2')
+  const taken = await other.post(`/api/production/steps/${second.id}/complete`, {
+    data: { ...fields, done_on: second.due_on, yeast_lb: '8', yeast_generation: 5, ...(await brinkAnswer(tb.id, 'empty')) },
+  })
+  expect(taken.status(), await taken.text()).toBe(200)
+
+  await q.getByRole('button', { name: 'This brink is empty' }).click()
+  await expect(q.getByTestId('harvest-question-now')).toHaveText(`It changed since you answered. ${tb.name} · 8 lb US-05 gen 5`)
+  expect((await brink(tb.id))!.yeast?.on_hand_lb).toBe('8')
+  expect(stepOf(await batchOf(b.id), 'Yeast harvest').done_on).toBeNull()
+
+  await q.getByRole('button', { name: 'Harvest on top' }).click()
+  await expect(snack(page)).toHaveText(`Yeast harvest done · 9 lb → ${tb.name}.`)
+  expect((await brink(tb.id))!.yeast?.on_hand_lb).toBe('17')
+  expect(stepOf(await batchOf(b.id), 'Yeast harvest').done_on).toBe(s.due_on)
 })
 
 test('Yeast dumped with a note: no brink changes; the step says so', async ({ page }) => {

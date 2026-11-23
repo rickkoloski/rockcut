@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, expectNoSidewaysScroll } from './helpers'
 import { stepOf, today, type SBatch } from '../production/schedule'
-import { brink, history, pitchFrom, Yeast, yeastProduct } from '../production/yeast'
+import { brinkAnswer, brink, history, pitchFrom, Yeast, yeastProduct } from '../production/yeast'
 
 // D64 Stop 3: the batch page's Yeast section (spec §6.6: pitched from a brink,
 // harvested one line per pull with "(on top)", Yeast dumped with its note) and
@@ -47,7 +47,7 @@ test('the batch page: pitched from a brink, both pulls (the second on top), and 
   const api = await apiAs('brewer1')
   expect((await api.post(`/api/production/steps/${first.id}/complete`, { data: { done_on: first.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_lb: '30' } })).status()).toBe(200)
   expect(
-    (await api.post(`/api/production/steps/${second.id}/complete`, { data: { done_on: second.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_lb: '12', yeast_brink_answer: 'on_top' } })).status(),
+    (await api.post(`/api/production/steps/${second.id}/complete`, { data: { done_on: second.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_lb: '12', ...(await brinkAnswer(tb.id, 'on_top')) } })).status(),
   ).toBe(200)
   // #A's second step: Yeast dumped.
   const dumped = stepOf(a, 'Yeast harvest - #2')

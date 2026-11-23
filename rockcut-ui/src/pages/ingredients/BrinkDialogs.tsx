@@ -24,7 +24,7 @@ import FormDialog from '../../components/FormDialog'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
-import { useApiCreate, useApiDelete } from '../../hooks/useApiMutation'
+import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
@@ -32,7 +32,7 @@ import { parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE } from '../../lib/inventory'
 import { WRAP_ITEM, WRAP_SELECT } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
-import { BRINK_KEYS, beforeHarvestText, emptyWeightText, entryAmountText, lbText, readLb, shortDate, yeastText } from '../../lib/yeast'
+import { BRINK_KEYS, beforeHarvestText, cellsText, emptyWeightText, entryAmountText, lbText, readLb, shortDate, yeastText } from '../../lib/yeast'
 import type { YeastBatch, YeastBrink, YeastHistoryRecord } from '../../lib/types'
 
 
@@ -124,17 +124,26 @@ export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   )
 }
 
-/** D64 §4.7: a cell count (ticks the brink's Count task). */
-export function CountBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
-  const [date, setDate] = useState(coloradoToday())
-  const [cells, setCells] = useState('')
-  const [pct, setPct] = useState('')
-  const [note, setNote] = useState('')
+type HistoryCount = YeastHistoryRecord['counts'][number]
+
+/**
+ * D64 §4.7: a cell count (ticks the brink's Count task). From History (lead
+ * decisions 7, gap 15) it edits `count`, on a record first harvested on `first`.
+ */
+export function CountBrinkDialog({ brink, count, first, onClose }: { brink: YeastBrink; count?: HistoryCount; first?: string; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [date, setDate] = useState(count?.counted_on ?? coloradoToday())
+  const [cells, setCells] = useState(count ? String(Number(count.viable_millions_per_ml)) : '')
+  const [pct, setPct] = useState(count ? String(Number(count.viability_pct)) : '')
+  const [note, setNote] = useState(count?.note ?? '')
   const [error, setError] = useState<string | null>(null)
   const create = useApiCreate('/api/yeast/counts', { invalidateKeys: BRINK_KEYS })
+  const update = useApiUpdate((id) => `/api/yeast/counts/${id}`, { invalidateKeys: BRINK_KEYS })
+  const min = count ? first : brink.yeast?.first_harvested_on
   const c = parseDecimal(cells, 1)
   const v = parseDecimal(pct, 1)
-  const early = beforeHarvestText(brink, date)
+  // The API checks a count's day when it's given or changed.
+  const early = date === count?.counted_on ? null : beforeHarvestText({ name: brink.name, yeast: min ? { first_harvested_on: min } : null }, date)
   const pctError = v.ok && v.value != null && Number(v.value) > 100 ? 'At most 100%' : null
 
   const submit = async () => {
@@ -142,17 +151,21 @@ export function CountBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
     if (!v.ok || v.value == null) return setError('Enter the viability')
     if (pctError) return setError(pctError)
     if (date > coloradoToday()) return setError(FUTURE_DATE)
+    const body = { counted_on: date, viable_millions_per_ml: c.value, viability_pct: v.value, note: note.trim() || null }
     try {
-      await create.mutateAsync({ brink_id: brink.id, counted_on: date, viable_millions_per_ml: c.value, viability_pct: v.value, note: note.trim() || null })
+      if (count) await update.mutateAsync({ id: count.id, ...body })
+      else await create.mutateAsync({ brink_id: brink.id, ...body })
       onClose()
     } catch (err) {
+      // Pitched or deleted since: History shows it as it is now.
+      if (count) await qc.invalidateQueries({ queryKey: ['yeast_brink_history'] })
       setError(parseApiError(err))
     }
   }
 
   return (
-    <FormDialog open phone onClose={onClose} title={`Add count · ${brink.name}`} onSubmit={submit} loading={create.isPending} error={error} submitDisabled={!c.ok || !v.ok || !!pctError || !!early} testId="brink-count-dialog">
-      <DateField value={date} onChange={setDate} testId="brink-count-date" min={brink.yeast?.first_harvested_on} error={early} />
+    <FormDialog open phone onClose={onClose} title={`${count ? 'Edit' : 'Add'} count · ${brink.name}`} onSubmit={submit} loading={create.isPending || update.isPending} error={error} submitDisabled={!c.ok || !v.ok || !!pctError || !!early} testId="brink-count-dialog">
+      <DateField value={date} onChange={setDate} testId="brink-count-date" min={min} error={early} />
       <DecimalInput decimals={1} label="Viable cells (millions per mL)" value={cells} onChange={setCells} required fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-cells' } }} />
       <DecimalInput decimals={1} label="Viability (%)" value={pct} onChange={setPct} required fullWidth error={!!pctError} helperText={pctError ?? undefined} slotProps={{ htmlInput: { 'data-testid': 'brink-count-pct' } }} />
       <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-note' } }} />
@@ -265,12 +278,16 @@ function removeQuestion(e: HistoryEntry, brink: string): string {
  * D64 §6.3: a brink's records, newest first, each with its entries and
  * counts. Stop 3 (spec §8, A8): Remove on a mistaken pitch, dump or
  * adjustment (the record's latest, by its maker or a Brewery manager; the
- * API decides and says why not).
+ * API decides and says why not). Edit and Delete on a count the same way (gap 15).
  */
 export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
   const { data: records = [], isLoading } = useApiList<YeastHistoryRecord>(['yeast_brink_history', brink.id], `/api/yeast/brinks/${brink.id}/history`)
   const [removing, setRemoving] = useState<HistoryEntry | null>(null)
+  const [editing, setEditing] = useState<{ count: HistoryCount; first?: string } | null>(null)
+  const [deleting, setDeleting] = useState<HistoryCount | null>(null)
+  const qc = useQueryClient()
+  const removeCount = useApiDelete((id) => `/api/yeast/counts/${id}`, { invalidateKeys: BRINK_KEYS })
   const [removeError, setRemoveError] = useState<string | null>(null)
   const remove = useApiDelete((id) => `/api/yeast/entries/${id}`, { invalidateKeys: BRINK_KEYS })
   usePhoneBackCloses(true, onClose)
@@ -321,9 +338,35 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
               </Box>
             ))}
             {r.counts.map((c) => (
-              <Typography key={`c${c.id}`} variant="body2" color="text.secondary">
-                {`${shortDate(c.counted_on)} · Count ${Number(c.viable_millions_per_ml).toLocaleString('en-US')} M/mL · ${Number(c.viability_pct)}%${c.note ? ` · ${c.note}` : ''}${c.entered_by ? ` · ${c.entered_by.name}` : ''}`}
-              </Typography>
+              <Box key={`c${c.id}`} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }} data-testid={`brink-history-count-${c.id}`}>
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere', flex: 1 }}>
+                  {`${shortDate(c.counted_on)} · Count ${cellsText(c)}${c.note ? ` · ${c.note}` : ''}${c.entered_by ? ` · ${c.entered_by.name}` : ''}`}
+                </Typography>
+                {c.can_change && (
+                  <>
+                    <Button
+                      size="small"
+                      sx={{ flexShrink: 0, minWidth: 0, py: 0 }}
+                      onClick={() => setEditing({ count: c, first: r.entries.filter((e) => e.kind === 'harvested').map((e) => e.occurred_on).sort()[0] })}
+                      data-testid={`brink-history-count-edit-${c.id}`}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      sx={{ flexShrink: 0, minWidth: 0, py: 0 }}
+                      onClick={() => {
+                        setRemoveError(null)
+                        setDeleting(c)
+                      }}
+                      data-testid={`brink-history-count-delete-${c.id}`}
+                    >
+                      Delete
+                    </Button>
+                  </>
+                )}
+              </Box>
             ))}
           </Paper>
         ))}
@@ -331,6 +374,32 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+      {editing && <CountBrinkDialog brink={brink} {...editing} onClose={() => setEditing(null)} />}
+      {deleting && (
+        <ConfirmDialog
+          open
+          title="Delete count"
+          message={`Delete the ${shortDate(deleting.counted_on)} count (${cellsText(deleting)})? If no other count follows the latest harvest, "Count ${brink.name}" is due again.`}
+          confirmLabel="Delete"
+          testId="brink-history-count-confirm"
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            try {
+              await removeCount.mutateAsync(deleting.id)
+              setDeleting(null)
+            } catch (err) {
+              await qc.invalidateQueries({ queryKey: ['yeast_brink_history'] })
+              setRemoveError(parseApiError(err))
+            }
+          }}
+        >
+          {removeError && (
+            <Typography color="error" variant="body2" sx={{ mt: 1 }} role="alert" data-testid="brink-history-count-error">
+              {removeError}
+            </Typography>
+          )}
+        </ConfirmDialog>
+      )}
       {removing && (
         <ConfirmDialog
           open

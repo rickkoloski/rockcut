@@ -77,14 +77,25 @@ export function harvestBody(f: HarvestForm): Record<string, unknown> {
 }
 
 /** A 409 `yeast_question`: which one, and the answer each button sends. */
-export type HarvestQuestion =
-  | { kind: 'dirty'; message: string }
-  | { kind: 'has_yeast'; message: string }
+export interface HarvestQuestion {
+  kind: 'dirty' | 'has_yeast'
+  message: string
+  /** The brink as it is now (lead decisions 7, gap 19). */
+  state: YeastBrink | null
+}
 
 export function harvestQuestion(body: Record<string, unknown> | undefined): HarvestQuestion | null {
   if (body?.code !== 'yeast_question') return null
   const message = String(body.message ?? '')
-  return body.question === 'dirty' ? { kind: 'dirty', message } : body.question === 'has_yeast' ? { kind: 'has_yeast', message } : null
+  const kind = body.question
+  if (kind !== 'dirty' && kind !== 'has_yeast') return null
+  return { kind, message, state: (body.state as YeastBrink | undefined) ?? null }
+}
+
+/** Gap 19: a has-yeast answer carries the record it's about, and "This brink is empty" that record's version. */
+export function brinkAnswer(answer: 'on_top' | 'empty', q: HarvestQuestion): Record<string, unknown> {
+  const y = q.state?.yeast
+  return { yeast_brink_answer: answer, yeast_record_id: y?.harvest_id, ...(answer === 'empty' ? { yeast_lock_version: y?.lock_version } : {}) }
 }
 
 /** The snackbar after the check-off: "Yeast harvest done · 30 lb → YB1", "… · Yeast dumped". */
@@ -98,11 +109,11 @@ export function harvestDoneText(stepName: string, f: HarvestForm, brinks: Pick<Y
 export const pullText = (p: { occurred_on: string; lb: string; brink: string; on_top: boolean }) =>
   `${shortDate(p.occurred_on)} · ${lbText(p.lb)} → ${p.brink}${p.on_top ? ' (on top)' : ''}`
 
-/** `GET /api/yeast/batches/:id` (spec §6.6): what went into a batch and what came out. */
+/** `GET /api/yeast/batches/:id` (spec §6.6): what went into a batch and what came out; `into`: a split's part, pitched into its parent ("#73", gap 17). */
 export interface YeastBatchPage {
   pitched: (
-    | { source: 'lot'; movement_id?: number; can_remove?: boolean; occurred_on: string; quantity: string; unit: string | null; product: string | null; lot_number: string | null; note: string | null }
-    | { source: 'brink'; occurred_on: string; lb: string; brink: string | null; strains: string[]; generation: number | null; coferment: boolean; note: string | null }
+    | { source: 'lot'; movement_id?: number; can_remove?: boolean; into?: string | null; occurred_on: string; quantity: string; unit: string | null; product: string | null; lot_number: string | null; note: string | null }
+    | { source: 'brink'; into?: string | null; occurred_on: string; lb: string; brink: string | null; strains: string[]; generation: number | null; coferment: boolean; note: string | null }
   )[]
   harvested: { entry_id: number; occurred_on: string; lb: string; brink: string; on_top: boolean; strains: string[]; generation: number | null; note: string | null }[]
   dumped: { done_on: string | null; note: string | null }[]
@@ -110,8 +121,12 @@ export interface YeastBatchPage {
 
 const SINGULAR: Record<string, string> = { bricks: 'brick', pitchables: 'pitchable', tablets: 'tablet' }
 
-/** "2 bricks Chico Ale US-05, lot F123 · Mother", "38 lb from YB2 · US-05 gen 2", "… · Co-ferment: US-05 + WLP002 · gen 1". */
+/** "2 bricks Chico Ale US-05, lot F123 · Mother", "38 lb from YB2 · US-05 gen 2", "… · Co-ferment: US-05 + WLP002 · gen 1"; from a part's parent "… · into #73". */
 export function pitchedText(p: YeastBatchPage['pitched'][number]): string {
+  return [pitchText(p), p.into ? `into ${p.into}` : null].filter(Boolean).join(' · ')
+}
+
+function pitchText(p: YeastBatchPage['pitched'][number]): string {
   if (p.source === 'lot') {
     const n = Number(p.quantity)
     const unit = p.unit ? (n === 1 ? (SINGULAR[p.unit] ?? p.unit) : p.unit) : ''

@@ -659,6 +659,7 @@ defmodule RockcutApi.Tasks do
           |> ok_or_rollback()
 
         RockcutApi.Yeast.BoardTasks.uncompleted!(reopened)
+        reopened = RockcutApi.Yeast.BoardTasks.reopened!(reopened, actor)
 
         log!(reopened, "uncompleted", actor, %{
           "completed_on" => iso(task.completed_on),

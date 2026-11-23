@@ -12,7 +12,9 @@ defmodule RockcutApi.Yeast.Harvests do
     (`{:yeast_question, :dirty, brink}`; `dirty_ok` records anyway and clears
     the mark), then a brink with yeast in it (`{:yeast_question, :has_yeast,
     brink}`; `brink_answer` `on_top` adds to the record, `empty` closes it
-    with an `adjusted` entry to 0, "Emptied when the 11/22 harvest went in",
+    with an `adjusted` entry to 0; the answer carries the `record_id` it was
+    asked about, and for `empty` its `lock_version`, else it's asked again;
+    "Emptied when the 11/22 harvest went in",
     with no dirty mark and no Clean task). The record's strains and
     generation are refolded (`Rules.fold/1`), and the brink's Count task is
     opened, due the harvest day.
@@ -39,7 +41,17 @@ defmodule RockcutApi.Yeast.Harvests do
   alias RockcutApi.{Authz, Repo, Tasks}
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Ingredients.{Catalog, Product}
-  alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvest, HarvestProduct, Rules}
+
+  alias RockcutApi.Yeast.{
+    BoardTasks,
+    Brink,
+    Count,
+    Entry,
+    Generations,
+    Harvest,
+    HarvestProduct,
+    Rules
+  }
 
   @max_lb Decimal.new(10_000)
 
@@ -117,8 +129,12 @@ defmodule RockcutApi.Yeast.Harvests do
           brink.dirty and not truthy?(attrs["dirty_ok"]) ->
             Repo.rollback({:yeast_question, :dirty, brink})
 
-          open && attrs["brink_answer"] not in ["on_top", "empty"] ->
+          open && not answers?(attrs, open) ->
             Repo.rollback({:yeast_question, :has_yeast, brink})
+
+          # Gap 19: answered about yeast that has gone since.
+          is_nil(open) and id(attrs["record_id"]) != nil ->
+            refuse("#{brink.name} is empty now. Save again to harvest into it.")
 
           true ->
             :ok
@@ -162,12 +178,32 @@ defmodule RockcutApi.Yeast.Harvests do
     end
   end
 
+  # Lead decisions 7 (gap 19): the answer is about the record it was asked
+  # about; "This brink is empty" about that record as it was (`lock_version`).
+  defp answers?(attrs, open) do
+    id(attrs["record_id"]) == open.id and
+      case attrs["brink_answer"] do
+        "on_top" -> true
+        "empty" -> version(attrs["lock_version"]) == open.lock_version
+        _ -> false
+      end
+  end
+
+  defp id(v) when is_integer(v) or is_binary(v), do: RockcutApi.Ids.parse(to_string(v))
+  defp id(_), do: nil
+
   # "This brink is empty" (A6): the old record closes at 0 with the note; no
   # dirty mark and no Clean task, since the brink is being filled now.
   # Its Count task goes too (the harvest opens its own), its due day kept on
-  # the adjustment (gap 4).
+  # the adjustment (gap 4). Dated the harvest's day, but not before the old
+  # record's latest entry (gap 16).
   defp empty_for_harvest!(brink, record, on, actor) do
     left = on_hand(record)
+
+    closed_on =
+      Repo.one(from e in Entry, where: e.harvest_id == ^record.id, select: max(e.occurred_on))
+      |> then(&Enum.max([on, &1 || on], Date))
+
     task = BoardTasks.open_task(brink.id, "recount")
 
     if Decimal.gt?(left, 0) do
@@ -176,7 +212,7 @@ defmodule RockcutApi.Yeast.Harvests do
         %{
           kind: "adjusted",
           quantity_lb: Decimal.negate(left),
-          occurred_on: on,
+          occurred_on: closed_on,
           note: "Emptied when the #{short(on)} harvest went in",
           closed_recount_due_on: task && (task.due_on || on)
         },
@@ -189,7 +225,7 @@ defmodule RockcutApi.Yeast.Harvests do
     record
     |> Ecto.Changeset.change(
       status: "emptied",
-      emptied_on: on,
+      emptied_on: closed_on,
       lock_version: record.lock_version + 1
     )
     |> Repo.update!()
@@ -708,11 +744,14 @@ defmodule RockcutApi.Yeast.Harvests do
   @doc """
   The brink a batch's earlier harvest went into, while that brink still
   holds the record (and is active); nil otherwise. The dialog's default for
-  a second pull (decision 16).
+  a second pull (decision 16). A split's part: its own, else its parent's.
   """
   def default_brink_id(nil), do: nil
 
-  def default_brink_id(batch_id) do
+  def default_brink_id(batch_id),
+    do: Enum.find_value(Generations.family(batch_id), &brink_of_last_harvest/1)
+
+  defp brink_of_last_harvest(batch_id) do
     Repo.one(
       from e in Entry,
         join: h in assoc(e, :harvest),

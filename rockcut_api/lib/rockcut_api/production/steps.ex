@@ -612,7 +612,7 @@ defmodule RockcutApi.Production.Steps do
     do:
       ~w(done_on batch_number answer result fail_action retest_days) ++
         ~w(yeast_outcome yeast_brink_id yeast_lb yeast_product_ids yeast_generation) ++
-        ~w(yeast_brink_answer yeast_dirty_ok yeast_note)
+        ~w(yeast_brink_answer yeast_record_id yeast_lock_version yeast_dirty_ok yeast_note)
 
   @doc """
   Check off `step` (§3.7) as `actor`: `done_on` (default today; not in the
@@ -638,7 +638,8 @@ defmodule RockcutApi.Production.Steps do
   (`Yeast.Harvests.harvest/2`: `yeast_brink_id`, `yeast_lb`,
   `yeast_product_ids` and `yeast_generation`, which default to what was
   pitched into the batch, `Yeast.Generations.for_batch/1`; `done_on` is its
-  date; `yeast_dirty_ok` and `yeast_brink_answer` answer its questions, a
+  date; `yeast_dirty_ok` and `yeast_brink_answer` (with `yeast_record_id`
+  and `yeast_lock_version`, what was asked about) answer its questions, a
   `{:yeast_question, kind, brink}` otherwise). The person (on a device, the
   acting staff-code person) must be able to edit ingredients: else
   `:forbidden`, or on a device `:staff_code_not_allowed` ("can't do this
@@ -965,7 +966,9 @@ defmodule RockcutApi.Production.Steps do
       "note" => note,
       "production_step_id" => step.id,
       "dirty_ok" => attrs["yeast_dirty_ok"],
-      "brink_answer" => attrs["yeast_brink_answer"]
+      "brink_answer" => attrs["yeast_brink_answer"],
+      "record_id" => attrs["yeast_record_id"],
+      "lock_version" => attrs["yeast_lock_version"]
     }
     |> RockcutApi.Yeast.Harvests.harvest(actor)
     |> case do

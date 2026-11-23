@@ -20,6 +20,8 @@ defmodule RockcutApi.Yeast.BoardTasks do
   alias RockcutApi.Yeast.{Brink, Count, Entry, Harvest}
 
   @kinds ~w(recount clean)
+  # The `edited` event's scope when a brink's new name went on its task.
+  @brink "brink"
 
   def title(%Brink{name: name}, "recount"), do: "Count #{name}"
   def title(%Brink{name: name}, "clean"), do: "Clean #{name}"
@@ -187,12 +189,46 @@ defmodule RockcutApi.Yeast.BoardTasks do
     for kind <- @kinds,
         task = open_task(old.id, kind),
         task.title == title(old, kind) do
-      case Tasks.update_one(task, %{"title" => title(new, kind)}, actor) do
+      case Tasks.update_one(task, %{"title" => title(new, kind)}, actor, @brink) do
         {:ok, _} -> :ok
         {:error, reason} -> Repo.rollback(reason)
       end
     end
 
     :ok
+  end
+
+  @doc """
+  Lead decisions 7 (gap 18): a done task that opens again takes the brink's
+  name now, as `actor`, unless a person changed its title: it still has the
+  one it was created with, or the last the brink's renaming gave it.
+  """
+  def reopened!(%Task{yeast_kind: kind, yeast_brink_id: id} = task, actor)
+      when kind in @kinds and not is_nil(id) do
+    title = Brink |> Repo.get!(id) |> title(kind)
+
+    if task.title != title and task.title == own_title(task) do
+      case Tasks.update_one(task, %{"title" => title}, actor, @brink) do
+        {:ok, renamed} -> renamed
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    else
+      task
+    end
+  end
+
+  def reopened!(task, _actor), do: task
+
+  defp own_title(%Task{id: id}) do
+    from(e in Event,
+      where: e.task_id == ^id and e.action in ["created", "edited"],
+      order_by: [desc: e.id]
+    )
+    |> Repo.all()
+    |> Enum.find_value(fn
+      %{action: "created", title: title} -> title
+      %{detail: %{"scope" => @brink, "to" => %{"title" => title}}} -> title
+      _ -> nil
+    end)
   end
 end

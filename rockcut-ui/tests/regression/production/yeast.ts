@@ -23,7 +23,7 @@ export interface ApiBrink {
   dirty: boolean
   recount_due: boolean
   clean_due: boolean
-  yeast: { on_hand_lb: string; generation: number; coferment: boolean; strains: string[]; product_ids: number[] } | null
+  yeast: { harvest_id: number; lock_version: number; on_hand_lb: string; generation: number; coferment: boolean; strains: string[]; product_ids: number[] } | null
 }
 
 export interface HistoryEntry {
@@ -183,7 +183,13 @@ export async function brink(id: number): Promise<ApiBrink | undefined> {
   return list.find((b) => b.id === id)
 }
 
-export async function history(id: number): Promise<{ status: string; entries: HistoryEntry[]; counts: { id: number }[] }[]> {
+/** A has-yeast answer for the API: what the brink holds now (lead decisions 7, gap 19). */
+export async function brinkAnswer(id: number, answer: 'on_top' | 'empty') {
+  const y = (await brink(id))!.yeast!
+  return { yeast_brink_answer: answer, yeast_record_id: y.harvest_id, yeast_lock_version: y.lock_version }
+}
+
+export async function history(id: number): Promise<{ status: string; entries: HistoryEntry[]; counts: { id: number; can_change?: boolean }[] }[]> {
   return (await (await (await apiAs('brewer1')).get(`/api/yeast/brinks/${id}/history`)).json()).data
 }
 

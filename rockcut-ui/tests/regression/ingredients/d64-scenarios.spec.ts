@@ -2,7 +2,7 @@ import { test, expect, type Browser, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { adoptParty, adoptProduct, apiAs, categoryId, denverToday, expectNoSidewaysScroll, expectPhoneDialogClosed, makeD65Ingredient, openDialog, pick, saveProduct, tempTag } from './helpers'
 import { batchOf, snack, stepOf, today, type SBatch } from '../production/schedule'
-import { brink, fillHarvest, history, Yeast, yeastProduct } from '../production/yeast'
+import { brinkAnswer, brink, fillHarvest, history, Yeast, yeastProduct } from '../production/yeast'
 
 // D64 Stop 4 (spec §13, the persona scenarios not yet walked through the
 // screens): yeast purchasing (order and receive bricks, To order, Totals with
@@ -324,7 +324,7 @@ test('a count before the latest harvest still shows, marked, with Recount due', 
   await harvestApi(a, 'Yeast harvest', tb.id, '20', [us05.id], 1)
   const yesterday = stepOf(a, 'Yeast harvest').due_on
   await ok(await (await apiAs('brewer1')).post('/api/yeast/counts', { data: { brink_id: tb.id, counted_on: yesterday, viable_millions_per_ml: '1200', viability_pct: '92' } }))
-  await harvestApi(a, 'Yeast harvest - #2', tb.id, '10', [us05.id], 1, { yeast_brink_answer: 'on_top' })
+  await harvestApi(a, 'Yeast harvest - #2', tb.id, '10', [us05.id], 1, await brinkAnswer(tb.id, 'on_top'))
 
   const short = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`
   await page.goto('/ingredients/brinks')

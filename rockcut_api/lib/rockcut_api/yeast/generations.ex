@@ -19,8 +19,9 @@ defmodule RockcutApi.Yeast.Generations do
   import Ecto.Query
 
   alias RockcutApi.Repo
+  alias RockcutApi.Brewing.Batch
   alias RockcutApi.Ingredients.{Catalog, Movement, Product, Products}
-  alias RockcutApi.Production.Step
+  alias RockcutApi.Production.{Batches, Step}
   alias RockcutApi.Yeast.{Entry, Harvest, LotPitches, Rules}
 
   @doc """
@@ -51,17 +52,28 @@ defmodule RockcutApi.Yeast.Generations do
     MapSet.new(movements ++ entries)
   end
 
+  @doc """
+  Lead decisions 7 (gap 17): the batch, then (a split's part) its parent:
+  what went into the parent went into the part.
+  """
+  def family(batch_id) do
+    case Repo.one(from b in Batch, where: b.id == ^batch_id, select: b.split_parent_id) do
+      nil -> [batch_id]
+      parent_id -> [batch_id, parent_id]
+    end
+  end
+
   @doc "The defaults `Rules.from_sources/1` gives a harvest of `batch_id`; nil with no pitches."
   def for_batch(nil), do: nil
 
   def for_batch(batch_id) do
     lots =
-      for {product_id, _} <- lot_pitches(batch_id),
+      for {product_id, _} <- lot_pitches(family(batch_id)),
           uniq: true,
           do: %{product_ids: [product_id], generation: 0}
 
     brinks =
-      for e <- brink_pitches(batch_id),
+      for e <- brink_pitches(family(batch_id)),
           do: %{product_ids: e.product_ids || [], generation: e.generation || 0}
 
     Rules.from_sources(lots ++ brinks)
@@ -70,29 +82,33 @@ defmodule RockcutApi.Yeast.Generations do
   @doc """
   The Harvest dialog's defaults for a pull from `batch_id`: `for_batch/1`,
   else (nothing recorded as pitched) what the batch's earlier pull was
-  recorded as, so a second pull isn't asked again; nil when neither.
+  recorded as (a split's part: else its parent's), so a second pull isn't
+  asked again; nil when neither.
   """
   def defaults(nil), do: nil
 
   def defaults(batch_id) do
-    for_batch(batch_id) ||
-      case Repo.one(
-             from e in Entry,
-               where: e.batch_id == ^batch_id and e.kind in ["harvested"],
-               order_by: [desc: e.id],
-               limit: 1
-           ) do
-        nil ->
-          nil
-
-        e ->
-          ids = Enum.sort(e.product_ids || [])
-          %{product_ids: ids, generation: e.generation, coferment: length(ids) > 1}
-      end
+    for_batch(batch_id) || Enum.find_value(family(batch_id), &last_harvest/1)
   end
 
-  # `[{product_id, movement}]`: a yeast lot's `used` movements naming the batch.
-  defp lot_pitches(batch_id) do
+  defp last_harvest(batch_id) do
+    case Repo.one(
+           from e in Entry,
+             where: e.batch_id == ^batch_id and e.kind in ["harvested"],
+             order_by: [desc: e.id],
+             limit: 1
+         ) do
+      nil ->
+        nil
+
+      e ->
+        ids = Enum.sort(e.product_ids || [])
+        %{product_ids: ids, generation: e.generation, coferment: length(ids) > 1}
+    end
+  end
+
+  # `[{product_id, movement}]`: a yeast lot's `used` movements naming one of the batches.
+  defp lot_pitches(batch_ids) do
     yeast = Catalog.category_ids(["yeast"])
 
     Repo.all(
@@ -101,16 +117,16 @@ defmodule RockcutApi.Yeast.Generations do
         join: p in Product,
         on: p.id == l.product_id,
         join: i in assoc(p, :ingredient),
-        where: m.batch_id == ^batch_id and m.kind in ["used"] and i.category_id in ^yeast,
+        where: m.batch_id in ^batch_ids and m.kind in ["used"] and i.category_id in ^yeast,
         order_by: [m.occurred_on, m.id],
         select: {p.id, m}
     )
   end
 
-  defp brink_pitches(batch_id) do
+  defp brink_pitches(batch_ids) do
     Repo.all(
       from e in Entry,
-        where: e.batch_id == ^batch_id and e.kind in ["pitched"],
+        where: e.batch_id in ^batch_ids and e.kind in ["pitched"],
         order_by: [e.occurred_on, e.id]
     )
   end
@@ -119,13 +135,20 @@ defmodule RockcutApi.Yeast.Generations do
   The batch page's Yeast section: `%{pitched, harvested, dumped}`. Pitched:
   `%{source: "lot", quantity, unit, product, lot_number, occurred_on}` or
   `%{source: "brink", lb, brink, strains, generation, coferment,
-  occurred_on}`. Harvested: `%{lb, brink, occurred_on, on_top, strains,
+  occurred_on}`, with `into` ("#73") on a split's part for one that went into
+  its parent. Harvested: `%{lb, brink, occurred_on, on_top, strains,
   generation, note}`, one per pull in order. Dumped: `%{done_on, note}`.
   """
   def batch_page(batch_id, user) do
-    lot_rows = lot_pitches(batch_id)
-    removable = LotPitches.removable_ids(Enum.map(lot_rows, &elem(&1, 1)), user)
-    brink_rows = brink_pitches(batch_id)
+    family = family(batch_id)
+    lot_rows = lot_pitches(family)
+
+    # The parent's pitches are taken back on the parent's page.
+    removable =
+      for({_, m} <- lot_rows, m.batch_id == batch_id, do: m) |> LotPitches.removable_ids(user)
+
+    brink_rows = brink_pitches(family)
+    into = fn row -> if row.batch_id != batch_id, do: number(row.batch_id) end
 
     harvests =
       Repo.all(
@@ -158,6 +181,7 @@ defmodule RockcutApi.Yeast.Generations do
           unit: p && Products.unit_label(p),
           product: p && Products.short_name(p),
           lot_number: lots[m.lot_id],
+          into: into.(m),
           note: m.note
         }
       end) ++
@@ -167,6 +191,7 @@ defmodule RockcutApi.Yeast.Generations do
             occurred_on: e.occurred_on,
             lb: Decimal.abs(e.quantity_lb),
             brink: brink_names[e.harvest_id],
+            into: into.(e),
             strains: codes(e.product_ids, products),
             generation: e.generation,
             coferment: length(e.product_ids || []) > 1,
@@ -202,6 +227,10 @@ defmodule RockcutApi.Yeast.Generations do
       dumped: dumped
     }
   end
+
+  # "#73", a part's parent.
+  defp number(batch_id),
+    do: Repo.get!(Batch, batch_id) |> Batches.number_label(Batches.p_numbers())
 
   # A pull that went onto yeast already in its record (an earlier entry).
   defp on_top?(%Entry{id: id, harvest_id: harvest_id}),

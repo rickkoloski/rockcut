@@ -136,23 +136,28 @@ defmodule RockcutApi.Yeast.Counts do
 
   defp changeable!(count, actor) do
     unless Authz.can?(actor, :change, {:yeast_record, count}), do: Repo.rollback(:forbidden)
+    entries = Repo.all(from e in Entry, where: e.harvest_id == ^count.harvest_id)
+    if sentence = change_refusal(count, entries), do: Repo.rollback({:conflict, sentence})
+  end
 
-    pitch =
-      Repo.one(
-        from e in Entry,
-          where:
-            e.harvest_id == ^count.harvest_id and e.kind in ["pitched"] and
-              e.occurred_on >= ^count.counted_on,
-          order_by: e.occurred_on,
-          limit: 1,
-          select: e.occurred_on
-      )
+  @doc """
+  Why `count` can't be changed or deleted, or nil: the one rule behind both and
+  History's `can_change` (lead decisions 7, gap 15; who's asking is `Authz`'s).
+  `entries` are its record's.
+  """
+  def change_refusal(%Count{} = count, entries) do
+    entries
+    |> Enum.filter(
+      &(&1.kind in ["pitched"] and not Date.before?(&1.occurred_on, count.counted_on))
+    )
+    |> Enum.map(& &1.occurred_on)
+    |> Enum.min(Date, fn -> nil end)
+    |> case do
+      nil ->
+        nil
 
-    if pitch do
-      Repo.rollback(
-        {:conflict,
-         "A pitch on #{Harvests.short(pitch)} used this count or a later one, so it can't be changed"}
-      )
+      on ->
+        "A pitch on #{Harvests.short(on)} used this count or a later one, so it can't be changed"
     end
   end
 

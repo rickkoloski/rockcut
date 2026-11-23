@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { adoptParty, adoptProduct, apiAs, cleanupIngredients, denverToday, makeD65Ingredient, tempTag } from './helpers'
-import { addDays, stepOf, type SBatch } from '../production/schedule'
-import { brink, history, Yeast, yeastProduct } from '../production/yeast'
+import { addDays, schedule, stepOf, type SBatch } from '../production/schedule'
+import { addCount, brink, brinkAnswer, history, Yeast, yeastProduct } from '../production/yeast'
 
 // D64 lead decisions 3–5 (local QA) on the screens: History's direction and
 // Remove (gaps 2, 9), the date of a pitch or count (gap 3), a lot pitch taken
@@ -152,10 +152,79 @@ test('gap 7 (Matt): a History after "This brink is empty" and an un-check reads 
   const tb = await yeast.brink('YB-back')
   const a = await yeast.brewed('Galactic')
   await harvest(a, 'Yeast harvest', tb.id, '40')
-  const second = await harvest(a, 'Yeast harvest - #2', tb.id, '9', { yeast_brink_answer: 'empty' })
+  const second = await harvest(a, 'Yeast harvest - #2', tb.id, '9', await brinkAnswer(tb.id, 'empty'))
   expect((await brink(tb.id))!.yeast?.on_hand_lb).toBe('9')
   expect((await (await apiAs('brewer1')).post(`/api/production/steps/${second.id}/uncomplete`)).status()).toBe(200)
   await page.goto('/ingredients/brinks')
   await expect(page.getByTestId(`brink-on-hand-${tb.id}`)).toContainText('40 lb')
   expect((await history(tb.id)).filter((r) => r.status === 'in_brink')).toHaveLength(1)
+})
+
+test('gap 15: a count is edited and deleted from History by its maker; not once pitched after, not by another brewer', async ({ page, browser }) => {
+  const tb = await yeast.brink('YB-count')
+  const [a, b] = [await yeast.brewed('Galactic'), await yeast.brewed('Enos')]
+  const first = (await harvest(a, 'Yeast harvest', tb.id, '20')).due_on
+  await addCount(tb.id)
+  const id = (await history(tb.id))[0].counts[0].id
+
+  const other = await browser.newContext({ storageState: authFile('brewer2') })
+  const theirs = await action(await other.newPage(), tb.id, 'history', 'brink-history-dialog')
+  await expect(theirs.getByTestId(`brink-history-count-${id}`)).toContainText('Count 1,200 M/mL · 92%')
+  await expect(theirs.getByTestId(`brink-history-count-edit-${id}`)).toHaveCount(0)
+  await expect(theirs.getByTestId(`brink-history-count-delete-${id}`)).toHaveCount(0)
+  await other.close()
+
+  let h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await h.getByTestId(`brink-history-count-edit-${id}`).click()
+  const d = page.getByTestId('brink-count-dialog')
+  await expect(d.getByTestId('brink-count-cells')).toHaveValue('1200')
+  await d.getByTestId('brink-count-date').fill(addDays(first, -1))
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await d.getByTestId('brink-count-date').fill(first)
+  await d.getByTestId('brink-count-cells').fill('1350.5')
+  await d.getByRole('button', { name: 'Save' }).click()
+  await expect(d).toHaveCount(0)
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toContainText('Count 1,350.5 M/mL · 92%')
+
+  // Pitched after it: neither is offered.
+  await stock(tb.id, 'pitch', { lb: '1', batch_id: b.id })
+  h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toBeVisible()
+  await expect(h.getByTestId(`brink-history-count-delete-${id}`)).toHaveCount(0)
+  const pitch = (await history(tb.id))[0].entries.find((e) => e.kind === 'pitched')!
+  expect((await (await apiAs('brewer1')).delete(`/api/yeast/entries/${pitch.id}`)).ok()).toBe(true)
+
+  h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await h.getByTestId(`brink-history-count-delete-${id}`).click()
+  const q = page.getByTestId('brink-history-count-confirm')
+  await expect(q).toContainText('(1,350.5 M/mL · 92%)')
+  await q.getByRole('button', { name: 'Delete' }).click()
+  await expect(q).toHaveCount(0)
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toHaveCount(0)
+  expect((await brink(tb.id))!.recount_due).toBe(true)
+})
+
+test('gaps 17, 20 and 21: a part shows what went into its parent; neither deletes, and the dialog says why', async ({ page }) => {
+  const src = await yeast.brink('YB-split')
+  const [a, b] = [await yeast.brewed('Galactic'), await yeast.brewed('Enos')]
+  await harvest(a, 'Yeast harvest', src.id, '30')
+  await stock(src.id, 'pitch', { lb: '10', batch_id: b.id })
+  const res = await (await apiAs('brewer1')).post(`/api/production/batches/${b.id}/split`, {
+    data: { due_on: addDays(denverToday(), -1), parts: [{ stays: true, volume_bbl: 10 }, { volume_bbl: 10 }] },
+  })
+  expect(res.status(), await res.text()).toBe(201)
+  const [part] = (await schedule()).batches.filter((x) => x.split_parent_id === b.id)
+
+  await page.goto(`/batches/${part.id}`)
+  await expect(page.getByTestId('batch-yeast-pitched')).toContainText(`10 lb from ${src.name} · US-05 gen 1 · into #${b.batch_number}`)
+  for (const [id, says] of [
+    [part.id, "That's a part of a split. Undo the split to change it that way."],
+    [b.id, 'Undo the split first.'],
+  ] as const) {
+    await page.goto(`/batches/${id}`)
+    await page.getByRole('button', { name: 'Delete Batch' }).click()
+    const q = page.getByTestId('batch-page-delete-confirm')
+    await q.getByRole('button', { name: 'Delete' }).click()
+    await expect(q.getByTestId('batch-page-delete-error')).toHaveText(says)
+  }
 })

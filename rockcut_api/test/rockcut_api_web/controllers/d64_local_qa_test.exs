@@ -14,7 +14,7 @@ defmodule RockcutApiWeb.D64LocalQaTest do
   alias RockcutApi.{AccountsFixtures, Repo, StaffCodes, Tasks}
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Ingredients.Movement
-  alias RockcutApi.Production.Step
+  alias RockcutApi.Production.{Step, Steps}
   alias RockcutApi.Tasks.Task
   alias RockcutApi.Yeast.{Brink, Count, Entry, Generations, Harvest, Harvests}
 
@@ -107,8 +107,18 @@ defmodule RockcutApiWeb.D64LocalQaTest do
         user || c.brewer,
         :post,
         "/api/production/steps/#{step.id}/complete",
-        Map.merge(%{done_on: iso(0)}, params)
+        %{done_on: iso(0)} |> Map.merge(asked(c, params)) |> Map.merge(params)
       )
+
+  # What a has-yeast answer carries (lead decisions 7, gap 19): the brink's record now.
+  defp asked(c, %{yeast_brink_answer: _} = params) do
+    case Harvests.open_record(params[:yeast_brink_id] || c.tb.id) do
+      nil -> %{}
+      r -> %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+    end
+  end
+
+  defp asked(_c, _params), do: %{}
 
   defp uncomplete(c, step, user \\ nil),
     do: req(user || c.brewer, :post, "/api/production/steps/#{step.id}/uncomplete")
@@ -934,6 +944,343 @@ defmodule RockcutApiWeb.D64LocalQaTest do
 
       assert {200, _} = act(c, "adjust", %{weight_lb: "20", occurred_on: iso(-2)})
       assert {200, _} = act(c, "dump", %{occurred_on: iso(-2)})
+    end
+  end
+
+  describe "lead decisions 7, gaps 20 and 21: the batches page's delete and splits" do
+    setup c do
+      {batch, harvest} = brewed(c, "73")
+      Map.merge(c, %{batch: batch, harvest: harvest})
+    end
+
+    test "a part and a batch with parts are refused in Production's words; undone, it deletes",
+         c do
+      parts = split!(c, c.batch)
+
+      assert base(req(c.brewer, :delete, "/api/batches/#{c.batch.id}")) ==
+               "Undo the split first."
+
+      for part <- parts do
+        assert base(req(c.brewer, :delete, "/api/batches/#{part.id}")) ==
+                 "That's a part of a split. Undo the split to change it that way."
+      end
+
+      assert Enum.all?([c.batch | parts], &Repo.get(Batch, &1.id))
+      {200, _} = req(c.brewer, :delete, "/api/production/batches/#{c.batch.id}/split")
+      assert {204, _} = req(c.brewer, :delete, "/api/batches/#{c.batch.id}")
+    end
+
+    test "every row that points at a batch goes with it, or is one the delete asks about" do
+      holding =
+        for %{rows: rows} <- [
+              Repo.query!("""
+              SELECT m.name, f."from" FROM sqlite_master m, pragma_foreign_key_list(m.name) f
+              WHERE m.type = 'table' AND f."table" = 'batches' AND f.on_delete NOT IN ('CASCADE', 'SET NULL')
+              """)
+            ],
+            [table, column] <- rows,
+            do: {table, column}
+
+      assert Enum.sort(holding) == [
+               {"batches", "split_parent_id"},
+               {"inventory_movements", "batch_id"},
+               {"yeast_harvest_entries", "batch_id"}
+             ]
+    end
+  end
+
+  defp split!(c, batch) do
+    tank = tank!("SP#{System.unique_integer([:positive])}")
+
+    {201, _} =
+      req(c.brewer, :post, "/api/production/batches/#{batch.id}/split", %{
+        due_on: iso(-1),
+        parts: [%{stays: true, volume_bbl: 10}, %{tank_id: tank.id, volume_bbl: 10}]
+      })
+
+    Repo.all(from b in Batch, where: b.split_parent_id == ^batch.id, order_by: b.part_number)
+  end
+
+  describe "lead decisions 7, gap 17: a split's part" do
+    setup c do
+      {batch, harvest} = brewed(c, "73")
+      Map.merge(c, %{batch: batch, harvest: harvest})
+    end
+
+    defp preview(c, part) do
+      step =
+        Enum.find(steps_of(part), &(Steps.name(&1) == "Yeast harvest" and is_nil(&1.done_on)))
+
+      {200, %{"data" => %{"preview" => %{"needs_yeast" => true, "yeast" => yeast}}}} =
+        req(c.brewer, :post, "/api/production/steps/#{step.id}/complete", %{
+          done_on: iso(0),
+          preview: true
+        })
+
+      yeast
+    end
+
+    defp page(c, batch) do
+      {200, %{"data" => page}} = req(c.brewer, :get, "/api/yeast/batches/#{batch.id}")
+      page
+    end
+
+    test "the parent's pitch prefills both parts and shows there as into #73, with no Remove; the parent's page is unchanged",
+         c do
+      pitch_lot!(c, c.batch)
+      [p1, p2] = split!(c, c.batch)
+
+      for part <- [p1, p2] do
+        assert %{"product_ids" => [id], "generation" => 1} = preview(c, part)["defaults"]
+        assert id == c.us05.id
+
+        assert [%{"into" => "#73", "can_remove" => false, "lot_number" => "F123"}] =
+                 page(c, part)["pitched"]
+      end
+
+      assert [%{"into" => nil, "can_remove" => true}] = page(c, c.batch)["pitched"]
+
+      # One pitched into the part counts too, there only.
+      pitch_lot!(c, p1, c.wlp002, "1")
+      assert preview(c, p1)["defaults"]["coferment"]
+      refute preview(c, p2)["defaults"]["coferment"]
+      assert Enum.frequencies_by(page(c, p1)["pitched"], & &1["into"]) == %{nil => 1, "#73" => 1}
+      assert length(page(c, c.batch)["pitched"]) == 1
+    end
+
+    test "a pitch from a brink into the parent: its strains, the generation after it", c do
+      {other, step} = brewed(c, "72")
+      fill!(c, step, %{yeast_generation: 3})
+      {200, _} = act(c, "pitch", %{lb: "10", batch_id: c.batch.id})
+      [p1, _] = split!(c, c.batch)
+      assert preview(c, p1)["defaults"]["generation"] == 4
+      assert [%{"source" => "brink", "into" => "#73"}] = page(c, p1)["pitched"]
+      assert page(c, other)["pitched"] == []
+
+      # Saved from the part with the defaults.
+      assert {200, _} =
+               complete(
+                 c,
+                 named(p1, "Yeast harvest"),
+                 harvest_params(c, %{yeast_brink_id: c.tb2.id})
+               )
+
+      assert record(c.tb2).generation == 4
+    end
+
+    test "nothing pitched: the parent's earlier harvest, for the strain and the brink; the part's own once it has one",
+         c do
+      early = second_step!(c.harvest) |> Ecto.Changeset.change(due_on: day(-3)) |> Repo.update!()
+      fill!(c, early, %{done_on: iso(-3), yeast_generation: 5})
+      [p1, p2] = split!(c, c.batch)
+      assert %{"defaults" => %{"generation" => 5}, "default_brink_id" => b} = preview(c, p1)
+      assert b == c.tb.id
+      assert page(c, p1)["harvested"] == []
+
+      again = second_step!(named(p1, "Yeast harvest"))
+      fill!(c, again, %{yeast_brink_id: c.tb2.id, yeast_generation: 7})
+      assert %{"defaults" => %{"generation" => 7}, "default_brink_id" => b} = preview(c, p1)
+      assert b == c.tb2.id
+      assert preview(c, p2)["default_brink_id"] == c.tb.id
+    end
+
+    test "nothing at all: the dialog asks", c do
+      [p1, _] = split!(c, c.batch)
+      assert %{"defaults" => nil, "default_brink_id" => nil} = preview(c, p1)
+    end
+  end
+
+  describe "lead decisions 7, gap 15: can_change on a count is what the API answers" do
+    test "maker, another brewer, a manager; pitched since; a pitch dated before it", c do
+      {batch, harvest} = brewed(c, "41")
+      fill!(c, harvest, %{done_on: iso(-3), answer: "move_only"})
+      {200, _} = act(c, "pitch", %{lb: "1", batch_id: batch.id, occurred_on: iso(-2)})
+      {201, %{"data" => %{"id" => locked}}} = add_count(c, iso(-2))
+      {201, %{"data" => %{"id" => free}}} = add_count(c, iso(-1))
+
+      for {user, can} <- [{c.brewer, true}, {c.brewer2, false}, {c.mgr, true}] do
+        {200, %{"data" => [%{"counts" => counts}]}} =
+          req(user, :get, "/api/yeast/brinks/#{c.tb.id}/history")
+
+        assert Map.new(counts, &{&1["id"], &1["can_change"]}) == %{locked => false, free => can}
+
+        for %{"id" => id, "can_change" => can} <- counts do
+          {status, _} = req(user, :put, "/api/yeast/counts/#{id}", %{note: "x"})
+          assert status == 200 == can
+        end
+      end
+
+      assert {403, _} = req(c.brewer2, :delete, "/api/yeast/counts/#{free}")
+      assert {409, _} = req(c.brewer, :delete, "/api/yeast/counts/#{locked}")
+      assert {204, _} = req(c.mgr, :delete, "/api/yeast/counts/#{free}")
+    end
+  end
+
+  describe "lead decisions 7, gap 16: This brink is empty with an earlier day" do
+    test "the closing adjustment is dated the old record's latest entry, the harvest its own day; un-check restores",
+         c do
+      {batch, first} = brewed(c, "41")
+      fill!(c, first, %{done_on: iso(-4), answer: "move_only", yeast_lb: "10"})
+      {200, _} = act(c, "pitch", %{lb: "1", batch_id: batch.id, occurred_on: iso(-2)})
+      old = record(c.tb)
+      second = second_step!(first)
+      fill!(c, second, %{done_on: iso(-6), yeast_lb: "9", yeast_brink_answer: "empty"})
+
+      assert %{status: "emptied", emptied_on: emptied} = Repo.get!(Harvest, old.id)
+      assert emptied == day(-2)
+      closing = Repo.one!(from e in Entry, where: e.kind == "adjusted")
+      assert closing.occurred_on == day(-2)
+      assert closing.note == "Emptied when the #{Harvests.short(day(-6))} harvest went in"
+      assert latest(c.tb).occurred_on == day(-6)
+
+      {200, _} = uncomplete(c, second)
+      assert record(c.tb).id == old.id
+      assert Decimal.eq?(Harvests.on_hand(record(c.tb)), 9)
+    end
+
+    test "with a later day it's that day, as before", c do
+      {_, first} = brewed(c, "41")
+      fill!(c, first, %{done_on: iso(-4), answer: "move_only"})
+      old = record(c.tb)
+      fill!(c, second_step!(first), %{done_on: iso(-1), yeast_brink_answer: "empty"})
+      assert Repo.get!(Harvest, old.id).emptied_on == day(-1)
+    end
+  end
+
+  describe "lead decisions 7, gap 19: an answer about yeast that changed" do
+    setup c do
+      {batch, first} = brewed(c, "41")
+      fill!(c, first, %{yeast_lb: "12"})
+      Map.merge(c, %{batch: batch, first: first, second: second_step!(first)})
+    end
+
+    defp answer(c, step, answer, extra) do
+      extra =
+        Map.merge(
+          %{
+            yeast_brink_answer: answer,
+            yeast_record_id: nil,
+            yeast_lock_version: nil,
+            yeast_lb: "9",
+            yeast_product_ids: [c.us05.id],
+            yeast_generation: 1
+          },
+          extra
+        )
+
+      complete(c, step, harvest_params(c, extra))
+    end
+
+    defp asked_again!(c, {409, body}) do
+      assert %{"code" => "yeast_question", "question" => "has_yeast", "state" => state} = body
+      assert state == brink_json(c, c.tb) |> Map.take(Map.keys(state))
+      state["yeast"]
+    end
+
+    test "the two brewers: the second is asked again about the 8 lb, then answers it", c do
+      r = record(c.tb)
+      seen = %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+      third = second_step!(c.first)
+      {200, _} = answer(c, c.second, "empty", Map.put(seen, :yeast_lb, "8"))
+
+      for how <- ["empty", "on_top"] do
+        before = entries()
+        y = asked_again!(c, answer(c, third, how, seen))
+        assert y["on_hand_lb"] == "8"
+        assert entries() == before and is_nil(step(third).done_on)
+      end
+
+      y = asked_again!(c, answer(c, third, "empty", seen))
+
+      assert {200, _} =
+               answer(c, third, "empty", %{
+                 yeast_record_id: y["harvest_id"],
+                 yeast_lock_version: y["lock_version"]
+               })
+
+      assert Decimal.eq?(Harvests.on_hand(record(c.tb)), 9)
+    end
+
+    test "the same record pitched from since: empty asks again, on top goes on", c do
+      r = record(c.tb)
+      seen = %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+      {200, _} = act(c, "pitch", %{lb: "1", batch_id: c.batch.id})
+      assert asked_again!(c, answer(c, c.second, "empty", seen))["on_hand_lb"] == "11"
+      assert {200, _} = answer(c, c.second, "on_top", seen)
+      assert Decimal.eq?(Harvests.on_hand(record(c.tb)), 20)
+    end
+
+    test "an old client's answer without them is asked again", c do
+      r = record(c.tb)
+      asked_again!(c, answer(c, c.second, "on_top", %{}))
+      asked_again!(c, answer(c, c.second, "empty", %{yeast_record_id: r.id}))
+      assert length(entries()) == 1
+    end
+
+    test "the yeast has gone: nothing written, and it says so; saved again it goes in", c do
+      r = record(c.tb)
+      seen = %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+      {200, _} = uncomplete(c, c.first)
+
+      for how <- ["empty", "on_top"] do
+        assert {409,
+                %{
+                  "errors" => %{
+                    "base" => ["TB1 is empty now. Save again to harvest into it."]
+                  }
+                }} = answer(c, c.second, how, seen)
+
+        assert entries() == []
+      end
+
+      fill!(c, c.second, %{yeast_lb: "9"})
+      assert Decimal.eq?(Harvests.on_hand(record(c.tb)), 9)
+    end
+
+    test "the same answer sent twice writes once", c do
+      r = record(c.tb)
+      seen = %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+      assert {200, _} = answer(c, c.second, "empty", seen)
+      assert {422, %{"error" => "step_done"}} = answer(c, c.second, "empty", seen)
+      assert Enum.count(entries(), &(&1.kind == "harvested")) == 2
+    end
+  end
+
+  describe "lead decisions 7, gap 18: a task that opens again" do
+    defp rename!(c, name),
+      do: {200, _} = req(c.mgr, :put, "/api/yeast/brinks/#{c.tb.id}", %{name: name})
+
+    test "Clean takes the brink's name now, through every rename; a retitled one keeps its own",
+         c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest)
+      {200, _} = act(c, "dump", %{})
+      rename!(c, "TB1a")
+      task = last_task(c.tb, "clean")
+      {200, _} = tick(c, task, "complete")
+      rename!(c, "TB1b")
+      rename!(c, "TB1c")
+      assert {200, %{"data" => _}} = tick(c, task, "uncomplete")
+      assert open_tasks(c.tb) == [{"clean", "Clean TB1c"}]
+
+      {200, _} = tick(c, task, "complete")
+
+      {200, _} =
+        req(c.brewer, :patch, "/api/boards/brewery/tasks/#{task.id}", %{title: "Scrub it"})
+
+      rename!(c, "TB1d")
+      {200, _} = tick(c, task, "uncomplete")
+      assert open_tasks(c.tb) == [{"clean", "Scrub it"}]
+    end
+
+    test "Count, opened again by deleting its count", c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest)
+      count!(c, c.tb)
+      rename!(c, "TB1a")
+      [id] = count_ids()
+      delete_count(c, id)
+      assert open_tasks(c.tb) == [{"recount", "Count TB1a"}]
     end
   end
 end

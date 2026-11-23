@@ -109,8 +109,18 @@ defmodule RockcutApiWeb.D64Stop3Test do
         user || c.brewer,
         :post,
         "/api/production/steps/#{step.id}/complete",
-        Map.merge(%{done_on: iso(0)}, params)
+        %{done_on: iso(0)} |> Map.merge(asked(c, params)) |> Map.merge(params)
       )
+
+  # What a has-yeast answer carries (lead decisions 7, gap 19): the brink's record now.
+  defp asked(c, %{yeast_brink_answer: _} = params) do
+    case Harvests.open_record(params[:yeast_brink_id] || c.tb.id) do
+      nil -> %{}
+      r -> %{yeast_record_id: r.id, yeast_lock_version: r.lock_version}
+    end
+  end
+
+  defp asked(_c, _params), do: %{}
 
   defp uncomplete(c, step, user \\ nil),
     do: req(user || c.brewer, :post, "/api/production/steps/#{step.id}/uncomplete")

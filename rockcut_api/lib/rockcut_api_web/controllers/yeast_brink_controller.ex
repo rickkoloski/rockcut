@@ -11,8 +11,8 @@ defmodule RockcutApiWeb.YeastBrinkController do
     owners (`:ingredients` write).
   * `remove_entry` (Stop 3, `DELETE /api/yeast/entries/:id`): Remove a
     mistaken pitch, dump or adjustment (`Harvests.remove_entry/2`: its maker
-    or a Brewery manager). History marks each entry `can_remove` for the
-    viewer.
+    or a Brewery manager). History marks each entry `can_remove`, and each
+    count `can_change`, for the viewer.
 
   No device does any of it (the `:brewery` plug and `Authz.Device`).
   """
@@ -42,24 +42,24 @@ defmodule RockcutApiWeb.YeastBrinkController do
           %{
             record
             | entries:
-                Enum.map(record.entries, fn e ->
-                  Map.put(
-                    e,
-                    :can_remove,
-                    e.removable and
-                      Authz.can?(
-                        user,
-                        :change,
-                        {:yeast_record, %{entered_by_id: e.entered_by && e.entered_by.id}}
-                      )
-                  )
-                end)
+                Enum.map(
+                  record.entries,
+                  &Map.put(&1, :can_remove, &1.removable and may_change?(user, &1))
+                ),
+              counts:
+                Enum.map(
+                  record.counts,
+                  &Map.put(&1, :can_change, &1.changeable and may_change?(user, &1))
+                )
           }
         end)
 
       json(conn, %{data: data})
     end
   end
+
+  defp may_change?(user, %{entered_by: by}),
+    do: Authz.can?(user, :change, {:yeast_record, %{entered_by_id: by && by.id}})
 
   def create(conn, params) do
     with :ok <- allow(conn, :manage, :yeast_settings),

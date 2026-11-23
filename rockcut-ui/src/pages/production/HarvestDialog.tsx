@@ -16,8 +16,9 @@ import FormDialog from '../../components/FormDialog'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { WRAP_ITEM, WRAP_SELECT } from '../../lib/ingredientFeatures'
-import { emptyWeightText, readLb } from '../../lib/yeast'
+import { brinkStateText, emptyWeightText, readLb } from '../../lib/yeast'
 import {
+  brinkAnswer,
   brinkOption,
   harvestBody,
   harvestError,
@@ -28,6 +29,7 @@ import {
   type HarvestPreview,
   type HarvestQuestion,
 } from '../../lib/harvest'
+import type { YeastBrink } from '../../lib/types'
 
 /** What a send answers: done, or why not (a 409 `yeast_question` asks one of the two questions). */
 export type HarvestSendResult = { ok: true } | { ok: false; error: string; code?: string; body?: Record<string, unknown> }
@@ -56,10 +58,14 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
   const [form, setForm] = useState<HarvestForm>(() => initialHarvest(yeast))
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [question, setQuestion] = useState<HarvestQuestion | null>(null)
+  // Gap 19: a question brings the brink as it is now; the picker shows that too.
+  const [fresh, setFresh] = useState<Record<number, YeastBrink>>({})
+  const [changed, setChanged] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const set = (patch: Partial<HarvestForm>) => setForm((f) => ({ ...f, ...patch }))
   const harvesting = form.outcome === 'harvested'
-  const brink = yeast.brinks.find((b) => b.id === form.brinkId) ?? null
+  const brinks = yeast.brinks.map((b) => fresh[b.id] ?? b)
+  const brink = brinks.find((b) => b.id === form.brinkId) ?? null
   const lb = readLb(form.lb)
   const generationError = form.generation.trim() !== '' && readGeneration(form.generation) == null ? (Number(form.generation) > 999 ? '999 or less' : 'A whole number, 1 or more') : null
   const asked = yeast.defaults == null
@@ -77,14 +83,24 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
     if (r.ok) return onDone()
     const q = harvestQuestion(r.body)
     if (q) {
-      setAnswers(all)
+      // Only a dirty answer is kept: one about the yeast is good for the brink it was about.
+      setAnswers(q.kind === 'has_yeast' && all.yeast_dirty_ok ? { yeast_dirty_ok: true } : {})
+      setChanged('yeast_brink_answer' in extra)
+      if (q.state) setFresh((f) => ({ ...f, [q.state!.id]: q.state! }))
       setError(null)
       setQuestion(q)
       return
     }
     setQuestion(null)
+    setAnswers({})
     setError(r.error)
   }
+
+  const now = question?.state && (
+    <Typography variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }} data-testid="harvest-question-now">
+      {`${changed ? 'It changed since you answered. ' : ''}${brinkStateText(question.state)}`}
+    </Typography>
+  )
 
   const submit = async () => {
     const problem = harvestError(form)
@@ -128,7 +144,7 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
                 sx={WRAP_SELECT}
                 data-testid="harvest-brink"
               >
-                {yeast.brinks.map((b) => (
+                {brinks.map((b) => (
                   <MenuItem key={b.id} value={b.id} sx={WRAP_ITEM} data-testid={`harvest-brink-option-${b.id}`}>
                     {brinkOption(b)}
                   </MenuItem>
@@ -211,7 +227,9 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
           testId="harvest-question-dirty"
           onClose={() => setQuestion(null)}
           onConfirm={() => send({ yeast_dirty_ok: true })}
-        />
+        >
+          {now}
+        </ConfirmDialog>
       )}
       {question?.kind === 'has_yeast' && (
         <ConfirmDialog
@@ -223,9 +241,11 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
           cancelLabel="This brink is empty"
           testId="harvest-question-has-yeast"
           onClose={() => setQuestion(null)}
-          onCancel={() => send({ yeast_brink_answer: 'empty' })}
-          onConfirm={() => send({ yeast_brink_answer: 'on_top' })}
-        />
+          onCancel={() => send(brinkAnswer('empty', question))}
+          onConfirm={() => send(brinkAnswer('on_top', question))}
+        >
+          {now}
+        </ConfirmDialog>
       )}
     </>
   )

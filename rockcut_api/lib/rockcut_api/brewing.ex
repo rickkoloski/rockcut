@@ -575,17 +575,33 @@ defmodule RockcutApi.Brewing do
   end
 
   @doc """
-  The batches page's delete. D64 Stop 4: refused (422) while the batch has
-  yeast pitched into it or harvested from it.
+  The batches page's delete, on Production's split rules (lead decisions 7,
+  gaps 20, 21): `:split_part` for a part, `:split` for a batch with parts.
+  D64 Stop 4: refused (422) while the batch has yeast pitched into it or
+  harvested from it. Those are every row that holds a batch (its other rows
+  go with it).
   """
   def delete_batch(%Batch{} = batch) do
-    case RockcutApi.Production.Batches.yeast_blocked([batch.id]) do
-      nil ->
-        Repo.delete(batch)
+    alias RockcutApi.Production.Batches
 
-      reason ->
-        {:error, {:invalid, %{base: [RockcutApi.Production.Batches.yeast_message(reason)]}}}
-    end
+    Repo.transaction(
+      fn ->
+        cond do
+          batch.split_parent_id ->
+            Repo.rollback(:split_part)
+
+          Batches.split_parent?(batch) ->
+            Repo.rollback(:split)
+
+          reason = Batches.yeast_blocked([batch.id]) ->
+            Repo.rollback({:invalid, %{base: [Batches.yeast_message(reason)]}})
+
+          true ->
+            Repo.delete!(batch)
+        end
+      end,
+      mode: :immediate
+    )
   end
 
   # ── Brew Turns ─────────────────────────────────────────────────────

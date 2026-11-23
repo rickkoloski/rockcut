@@ -2,6 +2,7 @@ defmodule RockcutApiWeb.BatchController do
   use RockcutApiWeb, :controller
 
   alias RockcutApi.Brewing
+  alias RockcutApiWeb.ProductionErrors
   import RockcutApiWeb.JSONHelpers, only: [batch: 1]
 
   action_fallback RockcutApiWeb.FallbackController
@@ -35,8 +36,16 @@ defmodule RockcutApiWeb.BatchController do
   def delete(conn, %{"id" => id}) do
     b = Brewing.get_batch!(id)
 
-    with {:ok, _} <- Brewing.delete_batch(b) do
-      send_resp(conn, :no_content, "")
+    case Brewing.delete_batch(b) do
+      {:ok, _} ->
+        send_resp(conn, :no_content, "")
+
+      # Production's sentence, in the shape the batch page shows.
+      {:error, code} when code in [:split_part, :split] ->
+        {:error, {:invalid, %{base: [ProductionErrors.message(code)]}}}
+
+      error ->
+        error
     end
   end
 end

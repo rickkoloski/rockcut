@@ -1531,5 +1531,5 @@ export interface YeastHistoryRecord {
     /** Stop 3 (spec §8, A8): Remove is offered to this viewer (a pitch, dump or adjustment, the record's latest, theirs or a manager's). */
     can_remove?: boolean
   }[]
-  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; entered_by: { id: number; name: string } | null }[]
+  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; entered_by: { id: number; name: string } | null; can_change?: boolean }[]
 }

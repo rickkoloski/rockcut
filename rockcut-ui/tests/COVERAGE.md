@@ -1537,4 +1537,10 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | Decisions 6: a retired brink's closing entry isn't removed ("YB2 is retired. Restore it first.", `can_remove` too); an un-check or Undo that would reopen a record there is refused | LQA "a retired brink" (4) |
 | Decisions 6: Adjust and Dump dated before the first harvest | LQA "Adjust and Dump…"; LQ "gap 3" (Adjust's dialog) |
 | Decisions 6: the offer hint reads as a saved offer, "brick · 1 (5 lb)" | LQ "gap 5: … gap 1" |
+| 15 (decisions 7) Edit and Delete on a count in History, shown exactly when the API allows | LQA "gap 15"; LQ "gap 15" |
+| 16 "This brink is empty" with an earlier day: the closing adjustment isn't before the old record's entries; un-check restores | LQA "gap 16" |
+| 17 a split's part counts its parent's pitches (dialog, default brink, batch page "into #73"); the parent's harvest as the fallback | LQA "gap 17"; vitest `harvest.test.ts` `pitchedText`; LQ "gaps 17, 20 and 21" |
+| 18 a Clean or Count task that opens again takes the brink's name now, unless retitled | LQA "gap 18" |
+| 19 a has-yeast answer about yeast that changed is asked again with the brink now; nothing written; old clients asked again | LQA "gap 19"; vitest `brinkAnswer`; d64-harvest "gap 19" |
+| 20, 21 the batch page's delete of a part or of a batch with parts is refused in Production's words; no other key holds a batch | LQA "gaps 20 and 21"; LQ "gaps 17, 20 and 21" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |

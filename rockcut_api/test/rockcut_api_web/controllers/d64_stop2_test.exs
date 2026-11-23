@@ -70,6 +70,13 @@ defmodule RockcutApiWeb.D64Stop2Test do
   end
 
   defp harvest!(c, extra \\ %{}, actor \\ nil) do
+    # A has-yeast answer carries what it's about (lead decisions 7, gap 19).
+    extra =
+      case extra["brink_answer"] && Harvests.open_record(c.tb.id) do
+        nil -> extra
+        r -> Map.merge(%{"record_id" => r.id, "lock_version" => r.lock_version}, extra)
+      end
+
     {:ok, h} = harvest(c, extra, actor)
     h
   end

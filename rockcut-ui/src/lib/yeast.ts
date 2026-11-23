@@ -38,6 +38,10 @@ export function countText(y: Pick<YeastContents, 'count'>): string {
   return [`${cells} M/mL · ${pct}%`, `counted ${shortDate(c.counted_on)}`, c.before_harvest_on ? `before the ${shortDate(c.before_harvest_on)} harvest` : null].filter(Boolean).join(' · ')
 }
 
+/** "1,200 M/mL · 92%" */
+export const cellsText = (c: { viable_millions_per_ml: string; viability_pct: string }) =>
+  `${Number(c.viable_millions_per_ml).toLocaleString('en-US', { maximumFractionDigits: 1 })} M/mL · ${Number(c.viability_pct)}%`
+
 /** The brink's one-line state: "YB1 · empty", "YB3 · empty · dirty since 11/20", "YB2 · 42 lb US-05 gen 2". */
 export function brinkStateText(b: Pick<YeastBrink, 'name' | 'dirty' | 'dirty_since' | 'yeast'>): string {
   if (!b.yeast) return [b.name, 'empty', b.dirty ? `dirty since ${shortDate(b.dirty_since)}` : null].filter(Boolean).join(' · ')
@@ -57,7 +61,7 @@ export function entryAmountText(entry: { id: number; kind: string; quantity_lb: 
 }
 
 /** Gap 3 (Matt): a pitch or count dated before the yeast was first harvested, as the API says it; else null. */
-export function beforeHarvestText(b: Pick<YeastBrink, 'name' | 'yeast'>, date: string): string | null {
+export function beforeHarvestText(b: { name: string; yeast: Pick<YeastContents, 'first_harvested_on'> | null }, date: string): string | null {
   const first = b.yeast?.first_harvested_on
   return first && date && date < first ? `${b.name}'s yeast was harvested ${shortDate(first)}. Pick that day or later.` : null
 }

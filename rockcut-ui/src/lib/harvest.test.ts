@@ -1,6 +1,6 @@
 // D64 Stop 3: the Harvest dialog's start, checks, body and questions, and the batch page's lines.
 import { describe, expect, it } from 'vitest'
-import { brinkOption, harvestBody, harvestDoneText, harvestError, harvestQuestion, initialHarvest, pitchedText, pullText, readGeneration, type HarvestForm, type HarvestPreview } from './harvest'
+import { brinkAnswer, brinkOption, harvestBody, harvestDoneText, harvestError, harvestQuestion, initialHarvest, pitchedText, pullText, readGeneration, type HarvestForm, type HarvestPreview } from './harvest'
 import type { YeastBrink } from './types'
 
 const brink = (over: Partial<YeastBrink> = {}): YeastBrink => ({
@@ -116,10 +116,19 @@ describe('harvestQuestion', () => {
     expect(harvestQuestion({ code: 'yeast_question', question: 'dirty', message: 'YB2 is marked as dirty, record harvest anyway?' })).toEqual({
       kind: 'dirty',
       message: 'YB2 is marked as dirty, record harvest anyway?',
+      state: null,
     })
-    expect(harvestQuestion({ code: 'yeast_question', question: 'has_yeast', message: 'm' })).toEqual({ kind: 'has_yeast', message: 'm' })
+    expect(harvestQuestion({ code: 'yeast_question', question: 'has_yeast', message: 'm', state: yb2 })).toEqual({ kind: 'has_yeast', message: 'm', state: yb2 })
     expect(harvestQuestion({ error: 'yeast_locked' })).toBeNull()
     expect(harvestQuestion(undefined)).toBeNull()
+  })
+})
+
+describe('brinkAnswer (lead decisions 7, gap 19)', () => {
+  const q = { kind: 'has_yeast' as const, message: 'm', state: yb2 }
+  it('carries the record; This brink is empty its version too', () => {
+    expect(brinkAnswer('on_top', q)).toEqual({ yeast_brink_answer: 'on_top', yeast_record_id: 9 })
+    expect(brinkAnswer('empty', q)).toEqual({ yeast_brink_answer: 'empty', yeast_record_id: 9, yeast_lock_version: 1 })
   })
 })
 
@@ -140,6 +149,10 @@ describe('the words', () => {
     )
     expect(pitchedText({ source: 'brink', occurred_on: '2026-11-14', lb: '38', brink: 'YB2', strains: ['US-05'], generation: 2, coferment: false, note: null })).toBe(
       '38 lb from YB2 · US-05 gen 2',
+    )
+    // Gap 17: a split's part, pitched into its parent.
+    expect(pitchedText({ source: 'lot', into: '#73', occurred_on: '2026-11-14', quantity: '2', unit: 'bricks', product: 'Chico Ale US-05', lot_number: 'F123', note: null })).toBe(
+      '2 bricks Chico Ale US-05, lot F123 · Mother · into #73',
     )
     expect(pitchedText({ source: 'brink', occurred_on: '2026-11-14', lb: '20', brink: 'YB3', strains: ['US-05', 'WLP002'], generation: 1, coferment: true, note: null })).toBe(
       '20 lb from YB3 · Co-ferment: US-05 + WLP002 · gen 1',

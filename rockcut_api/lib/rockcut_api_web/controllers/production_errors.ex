@@ -99,6 +99,9 @@ defmodule RockcutApiWeb.ProductionErrors do
     yeast_outcome_invalid: "Choose Harvest yeast or Yeast dumped."
   }
 
+  @doc "The sentence of a refusal code."
+  def message(code), do: Map.fetch!(@messages, code)
+
   def handle(%Plug.Conn{} = conn, _conn), do: conn
   def handle({:error, %Ecto.Changeset{}} = error, _conn), do: error
 
@@ -128,6 +131,9 @@ defmodule RockcutApiWeb.ProductionErrors do
       question: if(kind == :dirty, do: "dirty", else: "has_yeast"),
       brink_id: brink.id,
       brink: brink.name,
+      # Lead decisions 7 (gap 19): the brink now; a has-yeast answer carries
+      # its `yeast.harvest_id` and `yeast.lock_version` back.
+      state: Enum.find(RockcutApi.Yeast.Brinks.list(), &(&1.id == brink.id)),
       message: message
     })
   end
