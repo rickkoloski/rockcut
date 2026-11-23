@@ -252,6 +252,15 @@ defmodule RockcutApiWeb.D64LocalQaTest do
         viability_pct: "92"
       })
 
+  # Lead decisions 8 (gap 23): a count's version now.
+  defp v(id), do: %{lock_version: Repo.get!(Count, id).lock_version}
+
+  defp put_count(c, id, params, user \\ nil),
+    do: req(user || c.brewer, :put, "/api/yeast/counts/#{id}", Map.merge(v(id), params))
+
+  defp del_count(c, id, user \\ nil),
+    do: req(user || c.brewer, :delete, "/api/yeast/counts/#{id}", v(id))
+
   # A dirty brink since 5 days ago with its Clean task, and a harvest recorded anyway.
   defp dirty_harvest(c) do
     Repo.update!(Ecto.Changeset.change(c.tb, dirty: true, dirty_since: day(-5)))
@@ -597,7 +606,7 @@ defmodule RockcutApiWeb.D64LocalQaTest do
     defp count_ids, do: Repo.all(from x in Count, order_by: x.id, select: x.id)
 
     defp delete_count(c, id),
-      do: assert({204, _} = req(c.brewer, :delete, "/api/yeast/counts/#{id}"))
+      do: assert({204, _} = del_count(c, id, c.brewer))
 
     test "the only count: its Count task opens again and Recount is due", c do
       count!(c, c.tb)
@@ -857,16 +866,16 @@ defmodule RockcutApiWeb.D64LocalQaTest do
     test "editing a count's date; its other fields stay editable", c do
       {201, %{"data" => %{"id" => id}}} = add_count(c, iso(-1))
 
-      assert base(req(c.brewer, :put, "/api/yeast/counts/#{id}", %{counted_on: iso(-3)})) ==
+      assert base(put_count(c, id, %{counted_on: iso(-3)}, c.brewer)) ==
                c.says
 
       assert {200, _} =
-               req(c.brewer, :put, "/api/yeast/counts/#{id}", %{counted_on: iso(-2), note: "x"})
+               put_count(c, id, %{counted_on: iso(-2), note: "x"}, c.brewer)
 
       Repo.update_all(Count, set: [counted_on: day(-9)])
 
       assert {200, _} =
-               req(c.brewer, :put, "/api/yeast/counts/#{id}", %{counted_on: iso(-9), note: "y"})
+               put_count(c, id, %{counted_on: iso(-9), note: "y"}, c.brewer)
     end
 
     test "a purchased-yeast pitch is dated as before", c do
@@ -1105,14 +1114,14 @@ defmodule RockcutApiWeb.D64LocalQaTest do
         assert Map.new(counts, &{&1["id"], &1["can_change"]}) == %{locked => false, free => can}
 
         for %{"id" => id, "can_change" => can} <- counts do
-          {status, _} = req(user, :put, "/api/yeast/counts/#{id}", %{note: "x"})
+          {status, _} = put_count(c, id, %{note: "x"}, user)
           assert status == 200 == can
         end
       end
 
-      assert {403, _} = req(c.brewer2, :delete, "/api/yeast/counts/#{free}")
-      assert {409, _} = req(c.brewer, :delete, "/api/yeast/counts/#{locked}")
-      assert {204, _} = req(c.mgr, :delete, "/api/yeast/counts/#{free}")
+      assert {403, _} = del_count(c, free, c.brewer2)
+      assert {409, _} = del_count(c, locked, c.brewer)
+      assert {204, _} = del_count(c, free, c.mgr)
     end
   end
 
@@ -1281,6 +1290,196 @@ defmodule RockcutApiWeb.D64LocalQaTest do
       [id] = count_ids()
       delete_count(c, id)
       assert open_tasks(c.tb) == [{"recount", "Count TB1a"}]
+    end
+  end
+
+  describe "lead decisions 8, gap 23: a count changed since it was opened" do
+    setup c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest, %{done_on: iso(-3), answer: "move_only"})
+      {201, %{"data" => %{"id" => id, "lock_version" => 1}}} = add_count(c, iso(-1))
+      Map.merge(c, %{id: id, path: "/api/yeast/counts/#{id}"})
+    end
+
+    @stale "Someone else changed this count since you opened it. Close and reopen it to see their change."
+
+    defp stale!({409, %{"errors" => %{"base" => [m]}}}), do: assert(m == @stale)
+
+    test "the second of two edits, and a delete, are refused and nothing is written; History has the version now",
+         c do
+      {200, %{"data" => %{"lock_version" => 2}}} =
+        req(c.mgr, :put, c.path, %{
+          lock_version: 1,
+          viable_millions_per_ml: "700",
+          note: "recounted"
+        })
+
+      before = Repo.get!(Count, c.id)
+
+      stale!(req(c.brewer, :put, c.path, %{lock_version: 1, viability_pct: "61"}))
+      stale!(req(c.brewer, :delete, c.path, %{lock_version: 1}))
+      assert Repo.get!(Count, c.id) == before
+      assert open_tasks(c.tb) == []
+
+      {200, %{"data" => [%{"counts" => [%{"lock_version" => 2, "note" => "recounted"}]}]}} =
+        req(c.brewer, :get, "/api/yeast/brinks/#{c.tb.id}/history")
+
+      assert {200, %{"data" => %{"lock_version" => 3, "viability_pct" => "61"}}} =
+               req(c.brewer, :put, c.path, %{lock_version: 2, viability_pct: "61"})
+
+      # A DELETE may carry it in the query.
+      assert {204, _} = req(c.brewer, :delete, c.path <> "?lock_version=3")
+    end
+
+    test "without one (or one that isn't a number) it's refused the same way", c do
+      before = Repo.get!(Count, c.id)
+
+      for bad <- [%{}, %{lock_version: nil}, %{lock_version: "1x"}, %{lock_version: [1]}] do
+        stale!(req(c.brewer, :put, c.path, Map.put(bad, :viability_pct, "61")))
+        stale!(req(c.brewer, :delete, c.path, bad))
+      end
+
+      assert Repo.get!(Count, c.id) == before
+    end
+
+    test "a save that changes nothing is a new version; another brewer is 403 whatever they send",
+         c do
+      assert {200, %{"data" => %{"lock_version" => 2}}} =
+               req(c.brewer, :put, c.path, %{lock_version: 1})
+
+      assert {403, _} = req(c.brewer2, :put, c.path, %{lock_version: 1})
+      assert {403, _} = req(c.brewer2, :delete, c.path, %{})
+    end
+  end
+
+  describe "lead decisions 8, gap 24: the Count task follows the counts" do
+    # QA's: harvest 5 days ago, count 3 days ago, harvest on top 2 days ago.
+    setup c do
+      {_, first} = brewed(c, "41")
+      fill!(c, first, %{done_on: iso(-5), answer: "move_only"})
+      Map.put(c, :first, first)
+    end
+
+    defp on_top!(c, on) do
+      backdate!(Entry, 20)
+      backdate!(Count, 10)
+      s = second_step!(c.first)
+      fill!(c, s, %{done_on: iso(on), yeast_brink_answer: "on_top", answer: "move_only"})
+      s
+    end
+
+    defp counted!(c, on) do
+      {201, %{"data" => %{"id" => id}}} = add_count(c, iso(on))
+      id
+    end
+
+    defp due?(c) do
+      due = brink_json(c, c.tb)["recount_due"]
+      assert due == (open_tasks(c.tb) == [{"recount", "Count TB1"}])
+      due
+    end
+
+    test "edited from before the harvest to after it: ticked; and back again", c do
+      id = counted!(c, -3)
+      on_top!(c, -2)
+      assert due?(c)
+      {200, _} = put_count(c, id, %{counted_on: iso(-1)})
+      refute due?(c)
+      {200, _} = put_count(c, id, %{counted_on: iso(-3)})
+      assert due?(c)
+      # And to the harvest's own day.
+      {200, _} = put_count(c, id, %{counted_on: iso(-2)})
+      refute due?(c)
+      {200, _} = put_count(c, id, %{note: "typo"})
+      refute due?(c)
+      {204, _} = del_count(c, id)
+      assert due?(c)
+    end
+
+    test "added after the harvest, then edited to before it: due again", c do
+      counted!(c, -3)
+      on_top!(c, -2)
+      id = counted!(c, -1)
+      refute due?(c)
+      {200, _} = put_count(c, id, %{counted_on: iso(-3)})
+      assert due?(c)
+      {204, _} = del_count(c, id)
+      assert due?(c)
+    end
+
+    test "one added for a day before the harvest leaves it due, as one edited there does", c do
+      on_top!(c, -2)
+      counted!(c, -3)
+      assert due?(c)
+      counted!(c, -2)
+      refute due?(c)
+    end
+
+    test "an edit that leaves the date alone changes nothing: due stays due, ticked stays ticked",
+         c do
+      id = counted!(c, -2)
+      {200, _} = put_count(c, id, %{viability_pct: "61"})
+      refute due?(c)
+      # Harvested on top that same day, after the count: still due after the edit.
+      on_top!(c, -2)
+      assert due?(c)
+      {200, _} = put_count(c, id, %{viability_pct: "62", counted_on: iso(-2)})
+      assert due?(c)
+    end
+
+    test "another count covers: it answers for the task, and losing it opens the task", c do
+      a = counted!(c, -2)
+      b = counted!(c, -1)
+      on_top = fn -> Repo.get!(Count, b).ticked_task_id end
+      assert on_top.() == nil
+      {200, _} = put_count(c, a, %{counted_on: iso(-5)})
+      refute due?(c)
+      {204, _} = del_count(c, a)
+      refute due?(c)
+      assert on_top.() != nil
+      {204, _} = del_count(c, b)
+      assert due?(c)
+    end
+
+    test "ticked by hand stays ticked when a count that didn't tick it goes", c do
+      id = counted!(c, -3)
+      on_top!(c, -2)
+      {200, _} = tick(c, last_task(c.tb, "recount"), "complete")
+      {200, _} = put_count(c, id, %{counted_on: iso(-4)})
+      refute due?(c)
+      {204, _} = del_count(c, id)
+      refute due?(c)
+    end
+
+    test "un-checking the harvest on top: the rule is the same", c do
+      counted!(c, -3)
+      s = on_top!(c, -2)
+      assert due?(c)
+      {200, _} = uncomplete(c, s)
+      refute due?(c)
+    end
+
+    test "an empty brink has no task, whatever happens to its old counts", c do
+      id = counted!(c, -1)
+      {200, _} = act(c, "dump", %{})
+      {200, _} = put_count(c, id, %{counted_on: iso(-4)})
+      {204, _} = del_count(c, id)
+      assert open_tasks(c.tb) == [{"clean", "Clean TB1"}]
+      refute brink_json(c, c.tb)["recount_due"]
+    end
+  end
+
+  describe "lead decisions 8, gap 16: This brink is empty dates past a count" do
+    test "the closing adjustment is dated the record's latest count when that's the latest", c do
+      {_, first} = brewed(c, "41")
+      fill!(c, first, %{done_on: iso(-5), answer: "move_only", yeast_lb: "10"})
+      old = record(c.tb)
+      {201, _} = add_count(c, iso(-1))
+      fill!(c, second_step!(first), %{done_on: iso(-3), yeast_brink_answer: "empty"})
+
+      assert Repo.get!(Harvest, old.id).emptied_on == day(-1)
+      assert Repo.one!(from e in Entry, where: e.kind == "adjusted").occurred_on == day(-1)
+      assert latest(c.tb).occurred_on == day(-3)
     end
   end
 end

@@ -196,13 +196,17 @@ defmodule RockcutApi.Yeast.Harvests do
   # dirty mark and no Clean task, since the brink is being filled now.
   # Its Count task goes too (the harvest opens its own), its due day kept on
   # the adjustment (gap 4). Dated the harvest's day, but not before the old
-  # record's latest entry (gap 16).
+  # record's latest entry or count (gap 16).
   defp empty_for_harvest!(brink, record, on, actor) do
     left = on_hand(record)
 
     closed_on =
-      Repo.one(from e in Entry, where: e.harvest_id == ^record.id, select: max(e.occurred_on))
-      |> then(&Enum.max([on, &1 || on], Date))
+      [
+        Repo.one(from e in Entry, where: e.harvest_id == ^record.id, select: max(e.occurred_on)),
+        Repo.one(from c in Count, where: c.harvest_id == ^record.id, select: max(c.counted_on))
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> then(&Enum.max([on | &1], Date))
 
     task = BoardTasks.open_task(brink.id, "recount")
 
@@ -590,20 +594,56 @@ defmodule RockcutApi.Yeast.Harvests do
       )
   end
 
-  @doc "Whether the open record has a harvest with no count entered since."
-  def recount_needed?(%Harvest{status: "in_brink", id: id}) do
-    last_count =
-      Repo.one(from c in Count, where: c.harvest_id == ^id, select: max(c.inserted_at))
+  @doc """
+  Whether the open record has a harvest no count covers (`covering/2`): the
+  one rule for the Count task and Recount due (lead decisions 8, gap 24).
+  """
+  def recount_needed?(record, dated_now \\ nil)
 
-    harvests = from e in Entry, where: e.harvest_id == ^id and e.kind in ["harvested"]
+  def recount_needed?(%Harvest{status: "in_brink"} = record, dated_now),
+    do: harvests(record.id) != [] and covering(record, dated_now) == []
 
-    case last_count do
-      nil -> Repo.exists?(harvests)
-      at -> Repo.exists?(from e in harvests, where: e.inserted_at > ^at)
-    end
+  def recount_needed?(_record, _dated_now), do: false
+
+  @doc """
+  The record's counts that cover all its harvests, the last entered first: a
+  count dated after each, or the same day and since it. Since it on the same
+  day means entered since, given that day in this write (`dated_now`, a
+  count's id), or holding the tick of the brink's latest Count task (a count
+  given that day by an earlier edit; a harvest since has a newer task).
+  """
+  def covering(%Harvest{} = record, dated_now \\ nil) do
+    harvests = harvests(record.id)
+
+    latest_task =
+      Repo.one(
+        from t in Tasks.Task,
+          where: t.yeast_brink_id == ^record.brink_id and t.yeast_kind == "recount",
+          order_by: [desc: t.id],
+          limit: 1,
+          select: t.id
+      )
+
+    Repo.all(
+      from c in Count,
+        where: c.harvest_id == ^record.id,
+        order_by: [desc: c.inserted_at, desc: c.id]
+    )
+    |> Enum.filter(fn c ->
+      since? = c.id == dated_now or (c.ticked_task_id && c.ticked_task_id == latest_task)
+
+      Enum.all?(harvests, fn e ->
+        case Date.compare(c.counted_on, e.occurred_on) do
+          :gt -> true
+          :eq -> since? || DateTime.compare(c.inserted_at, e.inserted_at) != :lt
+          :lt -> false
+        end
+      end)
+    end)
   end
 
-  def recount_needed?(_record), do: false
+  defp harvests(record_id),
+    do: Repo.all(from e in Entry, where: e.harvest_id == ^record_id and e.kind in ["harvested"])
 
   defp delete_open_task!(brink, kind, actor) do
     case BoardTasks.open_task(brink.id, kind) do

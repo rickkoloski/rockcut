@@ -13,6 +13,7 @@ defmodule RockcutApi.Yeast.Count do
     field :viable_millions_per_ml, :decimal
     field :viability_pct, :decimal
     field :note, :string
+    field :lock_version, :integer, default: 1
 
     belongs_to :harvest, RockcutApi.Yeast.Harvest
     # Lead decisions 3, gap 11: the Count task this count ticked.

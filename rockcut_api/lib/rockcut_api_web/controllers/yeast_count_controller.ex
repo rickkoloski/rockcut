@@ -3,7 +3,8 @@ defmodule RockcutApiWeb.YeastCountController do
   D64 §4.7: cell counts (`/api/yeast/counts`, flat params: `brink_id`,
   `counted_on`, `viable_millions_per_ml`, `viability_pct`, `note`). Add:
   Brewery members and owners; change and delete: the maker or a Brewery
-  manager (`Yeast.Counts` asks `Authz`). No device.
+  manager (`Yeast.Counts` asks `Authz`), with the `lock_version` they opened
+  (409 when it has changed or is missing). No device.
   """
   use RockcutApiWeb, :controller
 
@@ -27,10 +28,10 @@ defmodule RockcutApiWeb.YeastCountController do
     end
   end
 
-  def delete(conn, %{"id" => id}) do
+  def delete(conn, %{"id" => id} = params) do
     with :ok <- allow(conn),
          %{} = count <- Counts.get(id) || {:error, :not_found},
-         {:ok, _} <- Counts.delete(count, conn.assigns.current_user) do
+         {:ok, _} <- Counts.delete(count, params, conn.assigns.current_user) do
       send_resp(conn, :no_content, "")
     end
   end
@@ -43,6 +44,7 @@ defmodule RockcutApiWeb.YeastCountController do
       viable_millions_per_ml: c.viable_millions_per_ml,
       viability_pct: c.viability_pct,
       note: c.note,
+      lock_version: c.lock_version,
       entered_by_id: c.entered_by_id
     }
   end

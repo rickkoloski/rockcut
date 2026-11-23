@@ -4,7 +4,8 @@ defmodule RockcutApi.Yeast.Counts do
 
   * Add count needs yeast in the brink, a day not in the future, viable
     cells (M/mL, > 0, 1 dp) and viability (%, 0–100, 1 dp); it ticks the
-    brink's open Count task.
+    brink's open Count task when it covers the harvests. Adding, changing and
+    deleting all settle the task one way (`settle!/4`).
   * The count in effect on day D is the latest counted on or before D (a tie
     goes to the one entered last). One taken before the latest harvest still
     applies; the screen marks it (`before_harvest`).
@@ -14,6 +15,7 @@ defmodule RockcutApi.Yeast.Counts do
   import Ecto.Query
 
   alias RockcutApi.{Authz, Repo, Tasks}
+  alias RockcutApi.Ingredients.Versions
   alias RockcutApi.Tasks.Task
   alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvest, Harvests}
 
@@ -34,42 +36,49 @@ defmodule RockcutApi.Yeast.Counts do
           |> Repo.insert()
           |> ok_or_rollback()
 
-        case BoardTasks.tick!(brink, "recount", actor) do
-          nil -> count
-          task -> count |> Ecto.Changeset.change(ticked_task_id: task.id) |> Repo.update!()
-        end
-      end,
-      mode: :immediate
-    )
-  end
-
-  @doc "Change a count (its maker or a Brewery manager; not once a pitch is dated on or after it)."
-  def update(%Count{} = count, attrs, actor) do
-    Repo.transaction(
-      fn ->
-        changeable!(count, actor)
-        record = Repo.get!(Harvest, count.harvest_id) |> Repo.preload(:brink)
-
+        settle!(%{record | brink: brink}, count, count.id, actor)
         count
-        |> Count.changeset(attrs)
-        |> not_before_harvest!(record.brink, record)
-        |> Repo.update()
-        |> ok_or_rollback()
       end,
       mode: :immediate
     )
   end
 
   @doc """
-  Delete a count, on the same terms as a change. The Count task it ticked
-  opens again unless another count follows the latest harvest (gap 11).
+  Change a count (its maker or a Brewery manager; not once a pitch is dated
+  on or after it). `lock_version` is the one the dialog opened (gap 23).
   """
-  def delete(%Count{} = count, actor) do
+  def update(%Count{} = count, attrs, actor) do
     Repo.transaction(
       fn ->
-        changeable!(count, actor)
+        count = current!(count.id, attrs, actor)
+        record = record!(count)
+
+        updated =
+          count
+          |> Count.changeset(attrs)
+          |> not_before_harvest!(record.brink, record)
+          |> Versions.bump()
+          |> Repo.update()
+          |> ok_or_rollback()
+
+        dated_now = if updated.counted_on != count.counted_on, do: updated.id
+        settle!(record, updated, dated_now, actor)
+        updated
+      end,
+      mode: :immediate
+    )
+  end
+
+  @doc """
+  Delete a count (`lock_version`), on the same terms as a change. The Count
+  task it ticked opens again unless another count covers the harvests (gap 11).
+  """
+  def delete(%Count{} = count, attrs, actor) do
+    Repo.transaction(
+      fn ->
+        count = current!(count.id, attrs, actor)
         Repo.delete!(count)
-        reopen_task!(count, actor)
+        settle!(record!(count), count, nil, actor)
         count
       end,
       mode: :immediate
@@ -86,41 +95,99 @@ defmodule RockcutApi.Yeast.Counts do
     end
   end
 
-  # Another count still covers the harvest: it answers for the task now.
-  defp reopen_task!(%Count{ticked_task_id: nil}, _actor), do: :ok
-
-  defp reopen_task!(%Count{ticked_task_id: task_id, harvest_id: harvest_id}, actor) do
-    record = Repo.get!(Harvest, harvest_id)
-    task = Repo.get(Task, task_id)
+  # Lead decisions 8 (gap 24): the brink's Count task after any write to a
+  # count (`touched`, as it was before a delete). Recount isn't needed: an
+  # open Count task is ticked, for a count that covers the harvests; a count
+  # that no longer does (or has gone) hands the task it ticked to one that
+  # does. Needed, and none open: the task `touched` ticked opens again. One
+  # ticked by hand, or before a later Count task, stays. An empty brink: nothing.
+  defp settle!(%Harvest{status: "in_brink"} = record, %Count{} = touched, dated_now, actor) do
+    covering = Harvests.covering(record, dated_now)
+    open = BoardTasks.open_task(record.brink_id, "recount")
 
     cond do
-      is_nil(task) or not Task.done?(task) or record.status != "in_brink" ->
-        :ok
+      Harvests.recount_needed?(record, dated_now) ->
+        if is_nil(open), do: reopen!(record, touched, actor)
 
-      not Harvests.recount_needed?(record) ->
-        Repo.one!(
-          from c in Count,
-            where: c.harvest_id == ^harvest_id,
-            order_by: [desc: c.inserted_at, desc: c.id],
-            limit: 1
-        )
-        |> Ecto.Changeset.change(ticked_task_id: task_id)
-        |> Repo.update!()
+      open ->
+        task = BoardTasks.tick!(record.brink, "recount", actor)
+        ticked!(covering, touched, task.id)
 
-        :ok
-
-      BoardTasks.open_task(record.brink_id, "recount") ->
-        :ok
+      touched.ticked_task_id ->
+        ticked!(covering, touched, touched.ticked_task_id)
 
       true ->
-        dept = Repo.get!(RockcutApi.Accounts.Department, task.department_id)
+        :ok
+    end
 
-        case Tasks.uncomplete(dept, task, actor) do
-          {:ok, _} -> :ok
-          {:error, reason} -> Repo.rollback(reason)
-        end
+    :ok
+  end
+
+  defp settle!(_record, _touched, _dated_now, _actor), do: :ok
+
+  # The task's tick is the touched count's if it covers, else the last entered that does.
+  defp ticked!(covering, touched, task_id) do
+    case Enum.find(covering, &(&1.id == touched.id)) || List.first(covering) do
+      nil ->
+        :ok
+
+      keeper ->
+        Repo.update_all(from(c in Count, where: c.ticked_task_id == ^task_id),
+          set: [ticked_task_id: nil]
+        )
+
+        Repo.update_all(from(c in Count, where: c.id == ^keeper.id),
+          set: [ticked_task_id: task_id]
+        )
     end
   end
+
+  defp reopen!(_record, %Count{ticked_task_id: nil}, _actor), do: :ok
+
+  defp reopen!(record, %Count{ticked_task_id: task_id}, actor) do
+    task = Repo.get(Task, task_id)
+
+    later? =
+      Repo.exists?(
+        from t in Task,
+          where:
+            t.yeast_brink_id == ^record.brink_id and t.yeast_kind == "recount" and t.id > ^task_id
+      )
+
+    if task && Task.done?(task) && not later? do
+      dept = Repo.get!(RockcutApi.Accounts.Department, task.department_id)
+
+      case Tasks.uncomplete(dept, task, actor) do
+        {:ok, _} -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+  end
+
+  # Lead decisions 8 (gap 23): the count now, when it's the version the
+  # dialog opened; another or none is refused (409).
+  defp current!(id, attrs, actor) do
+    count = Repo.get(Count, id) || Repo.rollback(:not_found)
+    unless Authz.can?(actor, :change, {:yeast_record, count}), do: Repo.rollback(:forbidden)
+    Versions.check!(count, version(attrs["lock_version"]), "count")
+
+    entries = Repo.all(from e in Entry, where: e.harvest_id == ^count.harvest_id)
+    if sentence = change_refusal(count, entries), do: Repo.rollback({:conflict, sentence})
+    count
+  end
+
+  defp version(v) when is_integer(v), do: v
+
+  defp version(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> nil
+    end
+  end
+
+  defp version(_), do: nil
+
+  defp record!(%Count{harvest_id: id}), do: Harvest |> Repo.get!(id) |> Repo.preload(:brink)
 
   def get(id), do: Repo.get(Count, id)
 
@@ -132,12 +199,6 @@ defmodule RockcutApi.Yeast.Counts do
         order_by: [desc: c.counted_on, desc: c.id],
         limit: 1
     )
-  end
-
-  defp changeable!(count, actor) do
-    unless Authz.can?(actor, :change, {:yeast_record, count}), do: Repo.rollback(:forbidden)
-    entries = Repo.all(from e in Entry, where: e.harvest_id == ^count.harvest_id)
-    if sentence = change_refusal(count, entries), do: Repo.rollback({:conflict, sentence})
   end
 
   @doc """

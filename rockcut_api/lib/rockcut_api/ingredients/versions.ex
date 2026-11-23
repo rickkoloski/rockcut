@@ -29,7 +29,7 @@ defmodule RockcutApi.Ingredients.Versions do
     end
   end
 
-  @doc "Refuse (409) when `record` (read in the transaction) isn't at `version`; `what` is \"order\", \"contract\" or \"product\"."
+  @doc "Refuse (409) when `record` (read in the transaction) isn't at `version`; `what` is \"order\", \"contract\", \"product\" or \"count\"."
   def check!(record, version, what) do
     if record.lock_version != version do
       Repo.rollback(

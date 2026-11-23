@@ -438,6 +438,8 @@ defmodule RockcutApiWeb.D64Stop2Test do
           )
         )
 
+    defp version(id), do: Repo.get!(Count, id).lock_version
+
     test "Add count ticks Count TB2; the brink shows it", c do
       assert [{"recount", _, _}] = open_tasks(c.tb)
       {201, %{"data" => _}} = count(c, %{})
@@ -489,14 +491,29 @@ defmodule RockcutApiWeb.D64Stop2Test do
 
     test "changed or deleted by its maker or a Brewery manager; not by another brewer", c do
       {201, %{"data" => %{"id" => id}}} = count(c, %{})
-      {403, _} = req(c.brewer2, :patch, "/api/yeast/counts/#{id}", %{"viability_pct" => "90"})
-      {403, _} = req(c.brewer2, :delete, "/api/yeast/counts/#{id}")
+
+      {403, _} =
+        req(c.brewer2, :patch, "/api/yeast/counts/#{id}", %{
+          "lock_version" => version(id),
+          "viability_pct" => "90"
+        })
+
+      {403, _} =
+        req(c.brewer2, :delete, "/api/yeast/counts/#{id}", %{"lock_version" => version(id)})
 
       {200, %{"data" => %{"viability_pct" => "90"}}} =
-        req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{"viability_pct" => "90"})
+        req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{
+          "lock_version" => version(id),
+          "viability_pct" => "90"
+        })
 
-      {200, _} = req(c.mgr, :patch, "/api/yeast/counts/#{id}", %{"viability_pct" => "91"})
-      {204, _} = req(c.mgr, :delete, "/api/yeast/counts/#{id}")
+      {200, _} =
+        req(c.mgr, :patch, "/api/yeast/counts/#{id}", %{
+          "lock_version" => version(id),
+          "viability_pct" => "91"
+        })
+
+      {204, _} = req(c.mgr, :delete, "/api/yeast/counts/#{id}", %{"lock_version" => version(id)})
     end
 
     test "a pitch dated on or after a count locks it; one dated before doesn't", c do
@@ -509,7 +526,11 @@ defmodule RockcutApiWeb.D64Stop2Test do
           "occurred_on" => iso(ago(3))
         })
 
-      {200, _} = req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{"viability_pct" => "90"})
+      {200, _} =
+        req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{
+          "lock_version" => version(id),
+          "viability_pct" => "90"
+        })
 
       {200, _} =
         post(c, c.tb, "pitch", %{
@@ -519,10 +540,14 @@ defmodule RockcutApiWeb.D64Stop2Test do
         })
 
       assert conflict(
-               req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{"viability_pct" => "89"})
+               req(c.brewer, :patch, "/api/yeast/counts/#{id}", %{
+                 "lock_version" => version(id),
+                 "viability_pct" => "89"
+               })
              ) =~ "used this count"
 
-      assert {409, _} = req(c.mgr, :delete, "/api/yeast/counts/#{id}")
+      assert {409, _} =
+               req(c.mgr, :delete, "/api/yeast/counts/#{id}", %{"lock_version" => version(id)})
     end
   end
 
