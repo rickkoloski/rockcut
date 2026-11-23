@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 import { addTemplateStep, apiAs, createTemplate, retireAll, stepTypes, tempTag } from './helpers'
 import { addDays, batchOf, Made, stepOf, today, type SBatch } from './schedule'
+import { getBoard } from '../brewery/taskBoardHelpers'
 
 // D64 Stop 3: Yeast harvest steps on [TEST-TEMP] batches, harvested into a
 // spec's own [TEST-TEMP] brinks (the seeded YB1–YB4 are only read). Clean-up
@@ -40,6 +41,7 @@ export class Yeast {
   brinks: number[] = []
   templates: number[] = []
   private templateName: string | null = null
+  private kept: number[] = []
 
   /**
    * `lean` (specs outside the one-worker `production` project): no tank or
@@ -101,10 +103,14 @@ export class Yeast {
    * D64 Stop 4: a batch purchased yeast was pitched into can't be deleted
    * (the movement holds it, and no API removes a movement). It and its brand
    * are left for `mix rockcut.synthetic.setup`, which drops the link first.
+   * Lead decisions 2: its steps come off the Brewery task list in `cleanup`,
+   * so its linked tasks don't stay on the shared board (they made today's
+   * list too tall for D39 S73's touch drag at phone width).
    */
   keep(batch: { id: number; brand_id: number }) {
     this.made.batches = this.made.batches.filter((id) => id !== batch.id)
     this.made.brands = this.made.brands.filter((id) => id !== batch.brand_id)
+    this.kept.push(batch.id)
   }
 
   async cleanup() {
@@ -135,7 +141,30 @@ export class Yeast {
         break
       }
     }
+    for (const id of this.kept.splice(0)) {
+      const b = await batchOf(id)
+      for (const step of b?.steps ?? []) {
+        if (step.marker || !(step as { on_task_list?: boolean }).on_task_list) continue
+        const res = await brewer.patch(`${P}/steps/${step.id}`, { data: { on_task_list: false } })
+        expect(res.status(), await res.text()).toBe(200)
+      }
+    }
     await this.made.cleanup()
+    // Lead decisions 2: the brinks' Count / Clean tasks, done or open, leave
+    // the shared Brewery board (a retired brink keeps them otherwise).
+    const names = new Set<string>()
+    for (const id of this.brinks) {
+      const b = await brink(id)
+      if (b) for (const kind of ['Count', 'Clean']) names.add(`${kind} ${b.name}`)
+    }
+    if (names.size) {
+      const board = await getBoard(brewer, addDays(today(), -15), addDays(today(), 15))
+      const cards = [...board.unfinished, ...board.days.flatMap((d) => d.cards)].filter((c) => names.has(c.title))
+      for (const id of new Set(cards.map((c) => c.id))) {
+        const res = await brewer.delete(`/api/boards/brewery/tasks/${id}`)
+        expect([200, 204, 410], await res.text()).toContain(res.status())
+      }
+    }
     for (const id of this.brinks.splice(0)) {
       const b = await brink(id)
       if (!b) continue
