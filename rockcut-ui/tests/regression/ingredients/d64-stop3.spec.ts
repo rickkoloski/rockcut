@@ -97,9 +97,8 @@ test('Remove refused by the API shows why in the confirm: the brink was filled a
   const a = await yeast.brewed('Galactic')
   const b = await yeast.brewed('Enos')
   await harvest(a, 'Yeast harvest', tb.id, '30')
-  // The whole 30 lb pitched: the brink empties (dirty); then #B's harvest starts a new record.
+  // The whole 30 lb pitched: the brink empties (dirty); History is opened now.
   await pitchFrom(tb.id, b.id, '30')
-  await harvest(b, 'Yeast harvest', tb.id, '20', { yeast_dirty_ok: true })
   const records = await history(tb.id)
   const emptied = records.find((r) => r.status === 'emptied')!
   const pitch = emptied.entries.find((e) => e.kind === 'pitched')!
@@ -107,6 +106,8 @@ test('Remove refused by the API shows why in the confirm: the brink was filled a
   const h = await openHistory(page, tb.id)
   await h.getByTestId(`brink-history-remove-${pitch.id}`).click()
   const confirm = page.getByTestId('brink-history-remove-confirm')
+  // #B's harvest starts a new record behind the open dialog (a fresh History offers no Remove: gap 9).
+  await harvest(b, 'Yeast harvest', tb.id, '20', { yeast_dirty_ok: true })
   await confirm.getByRole('button', { name: 'Remove' }).click()
   await expect(confirm.getByTestId('brink-history-remove-error')).toHaveText(`${tb.name} has been filled again since, so this can't be removed.`)
   expect((await history(tb.id)).find((r) => r.status === 'emptied')!.entries).toHaveLength(2)
