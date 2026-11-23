@@ -1516,3 +1516,22 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | Two people pitch the last 20 lb: the second refused, nothing written | SCEN "two people…"; S2 "two people pitch the last 20 lb…" |
 | 360 px: the Harvest dialog (both questions), the Brinks tab, Pitch, Add count, the batch page: no sideways scroll | BOARD "at 360 px" (has-yeast, dirty); d64-stop2 "at 360 px"; SCEN "at 360 px"; ING "at 360 px" |
 | Slow network: a double press on Save in the Harvest dialog, Pitch and Add count writes once | PROD "one press at a time…"; SCEN "a double press on Pitch and on Add count…" |
+
+**Local QA fix cycle** (lead decisions 3–5; `stepwise_results/d64_local_qa_report.md`). ExUnit `rockcut_api_web/controllers/d64_local_qa_test.exs` ("LQA"), `d64_seeds_test` ("SEED"); Vitest `src/lib/d64LocalQa.test.ts` ("VL"); Playwright `regression/ingredients/d64-local-qa.spec.ts` ("LQ"), `regression/production/d64-harvest-touch.spec.ts` ("TOUCH"). Every row is **(revert)**.
+
+| Gap | Coverage |
+|---|---|
+| 1 yeast product labels (no toggle, one $/brick per table, "brick · 1 brick") | VL `packIsUnit`; LQ "gap 5: … gap 1" |
+| 2 History direction, "Adjusted −7 lb (40 → 33)" | VL `entryAmountText`; LQ "gaps 2 and 9" |
+| 3 a pitch or count before the first harvest (add, edit a count; same day, on top later and earlier) | LQA "gap 3"; VL `beforeHarvestText`; LQ "gap 3" |
+| 4 closing at 0 deletes the open Count task; Remove brings it back with its day; an empty brink is never due | LQA "gap 4" |
+| 5 a lot pitch taken back (maker or manager; not after a count of the product; pitches only), product page and batch page | LQA "gap 5"; LQ "gap 5" (2) |
+| 6 the Gantt, the Harvest dialog and both questions at 360 px with touch | TOUCH (2) |
+| 7 un-check / Undo after "This brink is empty" restores the old record (Gantt, board, device) | LQA "gap 7"; LQ "gap 7" |
+| 8 a harvest into a dirty brink: un-check / Undo puts the mark back unless it was cleaned since | LQA "gap 8" |
+| 9 `can_remove` is the API's own rule | LQA "gap 9"; LQ "gaps 2 and 9" |
+| 10 un-ticking the latest Clean task dirties an empty brink | LQA "gap 10"; S2 "ticking Clean TB2…" |
+| 11 deleting the count that ticked Count opens it again | LQA "gap 11" |
+| 12 renaming a brink renames its open tasks | LQA "gap 12" |
+| 13 a brand with batches or recipes isn't deleted, and says why | LQA "gap 13"; LQ "gap 13" |
+| Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |
