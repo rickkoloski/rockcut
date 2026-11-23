@@ -706,3 +706,7 @@ lead calls.
     by hand clears Recount due; a count isn't required before use.
 15. A brink is never dirty while it holds yeast; un-checking one of two harvests moves the dirty mark
     to the one left in the brink (14).
+16. **Counts (pass 3, 23 and 24):** counts have a version (migration 14); a stale Edit or Delete is
+    refused. The Count task and Recount due follow from the counts and harvests by one rule, so a count
+    dated before the latest harvest still applies (decision 18) but doesn't tick the Count task (§7). The
+    closing date in 12 also takes the record's latest count into account.
