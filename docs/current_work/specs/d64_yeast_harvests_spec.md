@@ -710,3 +710,6 @@ lead calls.
     refused. The Count task and Recount due follow from the counts and harvests by one rule, so a count
     dated before the latest harvest still applies (decision 18) but doesn't tick the Count task (§7). The
     closing date in 12 also takes the record's latest count into account.
+17. **DEV QA (Matt, 2026-11-23):** accepted and carried to D63 Stop 0: phone Back on confirmations (task
+    6260), empty Voided rows in History (6261), the order footer's units (6262). "Harvest on top" isn't
+    asked again after someone else only adjusted the weight (DEV gap 4): left as is.
