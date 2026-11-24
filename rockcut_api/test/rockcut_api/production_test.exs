@@ -68,6 +68,8 @@ defmodule RockcutApi.ProductionTest do
                  "Filter",
                  "Split",
                  "CIP & Sanitize",
+                 # D64 §4.8: the Yeast harvest step type's behavior.
+                 "Yeast harvest",
                  "Package"
                ])
 

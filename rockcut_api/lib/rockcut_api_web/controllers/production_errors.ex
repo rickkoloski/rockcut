@@ -93,8 +93,14 @@ defmodule RockcutApiWeb.ProductionErrors do
     fail_action_invalid: "Choose Retest or Continue as planned.",
     retest_days_invalid: "Retest in 1 to 30 days.",
     retest_not_here: "That step can't be retested. Continue as planned instead.",
-    retest_done: "Mark the retest not done first."
+    retest_done: "Mark the retest not done first.",
+    # D64 §5: the Yeast harvest step.
+    yeast_required: "Choose Harvest yeast or Yeast dumped.",
+    yeast_outcome_invalid: "Choose Harvest yeast or Yeast dumped."
   }
+
+  @doc "The sentence of a refusal code."
+  def message(code), do: Map.fetch!(@messages, code)
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
   def handle({:error, %Ecto.Changeset{}} = error, _conn), do: error
@@ -104,6 +110,66 @@ defmodule RockcutApiWeb.ProductionErrors do
       do: StaffCodeActing.render_error(refusal, conn)
 
   def handle({:locked, _seconds} = refusal, conn), do: StaffCodeActing.render_error(refusal, conn)
+
+  # D64 §5.2: a question the Harvest dialog asks, then resends with the
+  # answer (`yeast_dirty_ok`, `yeast_brink_answer`); one at a time, dirty first.
+  def handle({:error, {:yeast_question, kind, brink}}, conn) do
+    message =
+      case kind do
+        :dirty ->
+          "#{brink.name} is marked as dirty, record harvest anyway?"
+
+        :has_yeast ->
+          "#{brink.name} shows yeast in brink. Do you want to harvest on top or is this brink empty?"
+      end
+
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "yeast_question",
+      code: "yeast_question",
+      question: if(kind == :dirty, do: "dirty", else: "has_yeast"),
+      brink_id: brink.id,
+      brink: brink.name,
+      # Lead decisions 7 (gap 19): the brink now; a has-yeast answer carries
+      # its `yeast.harvest_id` and `yeast.lock_version` back.
+      state: Enum.find(RockcutApi.Yeast.Brinks.list(), &(&1.id == brink.id)),
+      message: message
+    })
+  end
+
+  # D64 Stop 4: a batch that yeast was pitched into or harvested from isn't deleted.
+  def handle({:error, {:batch_has_yeast, _} = reason}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "batch_has_yeast",
+      message: RockcutApi.Production.Batches.yeast_message(reason)
+    })
+  end
+
+  # D64 §5.4 (decision 12): un-check and Undo of a harvest something followed.
+  def handle({:error, {:yeast_locked, brink}}, conn) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "yeast_locked",
+      message:
+        "#{brink.name} has been pitched from or counted since this harvest. The harvest can't be un-checked."
+    })
+  end
+
+  # D64 §5.4: an Undo that would check a harvest off again.
+  def handle({:error, :yeast_recheck}, conn) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{error: "yeast_recheck", message: "Check it off again to record the harvest."})
+  end
+
+  # D64: the harvest's own refusals (`Yeast.Harvests`: a weight, the brink,
+  # "YB2 has 18 lb") answer as on the yeast routes (`FallbackController`).
+  def handle({:error, {:invalid, errors}} = error, _conn) when is_map(errors), do: error
+  def handle({:error, {:conflict, message}} = error, _conn) when is_binary(message), do: error
 
   def handle({:error, :forbidden}, conn),
     do: conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})

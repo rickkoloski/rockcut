@@ -580,6 +580,51 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
   end
 
+  describe "D64 Stop 3: [TEST-TEMP] brinks" do
+    alias RockcutApi.Yeast.{Brink, Entry, Harvest}
+    alias RockcutApi.Tasks.Task
+
+    test "cleanup_temp removes tagged brinks with their records, entries and tasks; keeps the rest" do
+      brewery =
+        Repo.get_by(Department, key: "brewery") || AccountsFixtures.department_fixture("brewery")
+
+      temp = Repo.insert!(%Brink{name: "[TEST-TEMP] YB-x", active: false})
+      kept = Repo.insert!(%Brink{name: "TB-kept"})
+
+      for b <- [temp, kept] do
+        h = Repo.insert!(%Harvest{brink_id: b.id, status: "voided"})
+
+        Repo.insert!(%Entry{
+          harvest_id: h.id,
+          kind: "harvested",
+          quantity_lb: Decimal.new(1),
+          occurred_on: ~D[2026-11-20]
+        })
+
+        Repo.insert!(%Task{
+          department_id: brewery.id,
+          title: "Count #{b.name}",
+          due_on: ~D[2026-11-20],
+          position: 0,
+          yeast_brink_id: b.id,
+          yeast_kind: "recount"
+        })
+      end
+
+      :ok = Synthetic.cleanup_temp()
+
+      assert Repo.all(from(b in Brink, where: b.id in ^[temp.id, kept.id], select: b.name)) ==
+               ["TB-kept"]
+
+      assert Repo.all(from(h in Harvest, select: h.brink_id))
+             |> Enum.filter(&(&1 in [temp.id, kept.id])) ==
+               [kept.id]
+
+      assert Repo.all(from(t in Task, where: not is_nil(t.yeast_brink_id), select: t.title)) ==
+               ["Count TB-kept"]
+    end
+  end
+
   describe "Brewery task board (D38)" do
     alias RockcutApi.Tasks
     alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}

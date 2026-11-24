@@ -18,8 +18,9 @@ defmodule RockcutApiWeb.BrewingRangesControllerTest do
     # Recipes are unique per brand and version: the recipe case uses its own brand.
     {:ok, recipe_brand} = Brewing.create_brand(%{name: "[TEST] Ranges Amber"})
     {:ok, batch} = Brewing.create_batch(%{brand_id: brand.id})
-    # D62: a category the catalog doesn't manage, so a lot needs no product.
-    cat = RockcutApi.IngredientFixtures.keyed_category!("Yeast Strains", "yeast")
+    # D62: a category the catalog doesn't manage, so a lot needs no product
+    # (D64: yeast is managed now; a category with no key stands in).
+    cat = Repo.insert!(%Brewing.IngredientCategory{name: "Misc"})
     {:ok, hop} = Brewing.create_ingredient(%{name: "WLP001", category_id: cat.id})
     {:ok, lot} = Brewing.create_ingredient_lot(%{ingredient_id: hop.id, lot_number: "R-1"})
 

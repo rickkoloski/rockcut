@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import {

@@ -58,6 +58,8 @@ function AddProcessMenu({ onPlan, onAddCip }: { onPlan?: () => void; onAddCip?: 
   )
 }
 
+const DATE_BOX = { width: { xs: 'auto', sm: 150 }, flex: { xs: '1 1 0', sm: 'none' }, minWidth: 0, '& input': { px: { xs: 0.75, sm: 1.75 }, fontSize: { xs: 13, sm: 'inherit' } } }
+
 const EXPAND: Choice<ExpandMode>[] = [
   { value: 'collapse', label: 'Collapse all' },
   { value: 'mine', label: 'Your selection' },
@@ -154,7 +156,8 @@ export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onT
       <Button variant="outlined" size="small" onClick={onToday} data-testid="gantt-today">
         Today
       </Button>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      {/* D64 lead decisions 3, gap 6: on a phone the two dates share the row (they made the page 405 px wide at 360). */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, maxWidth: '100%' }}>
         <Tooltip title="4 weeks earlier">
           <IconButton size="small" onClick={() => onShift(-28)} aria-label="4 weeks earlier" data-testid="gantt-back">
             <ChevronLeft />
@@ -166,7 +169,7 @@ export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onT
           label="From"
           value={range.from}
           onChange={(e) => pick('from', e.target.value)}
-          sx={{ width: 150 }}
+          sx={DATE_BOX}
           slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'gantt-from' } }}
         />
         <TextField
@@ -177,7 +180,7 @@ export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onT
           onChange={(e) => pick('to', e.target.value)}
           error={!!error}
           helperText={error ?? undefined}
-          sx={{ width: 150 }}
+          sx={DATE_BOX}
           slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'gantt-to' }, formHelperText: { sx: { position: 'absolute', top: '100%', whiteSpace: 'nowrap' } } }}
         />
         <Tooltip title="4 weeks later">

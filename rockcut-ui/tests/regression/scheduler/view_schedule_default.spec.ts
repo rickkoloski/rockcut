@@ -91,7 +91,7 @@ test.describe('S183: owner', () => {
 
   test('Scheduler unchanged: the week grid, no From / To', async ({ page }) => {
     await openScheduler(page)
-    await expect(page.getByLabel('From')).toHaveCount(0)
-    await expect(page.getByLabel('To')).toHaveCount(0)
+    await expect(page.getByLabel('From', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('To', { exact: true })).toHaveCount(0)
   })
 })

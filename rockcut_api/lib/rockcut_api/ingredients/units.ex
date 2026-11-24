@@ -108,12 +108,19 @@ defmodule RockcutApi.Ingredients.Units do
 
   # `each` is a count: whole numbers ("tablets" is its label on a Tablet
   # product, D65). Every other unit to 2 decimals.
-  defp places(unit) when unit in ["each", "tablets"], do: 0
+  # D64: and "bricks" / "pitchables" on a Dry / Liquid yeast.
+  defp places(unit) when unit in ["each", "tablets", "bricks", "pitchables"], do: 0
   defp places(_unit), do: 2
 
-  # Lead decisions 1 (gap 6): exactly 1 is singular, "1 tablet".
+  # Lead decisions 1 (gap 6): exactly 1 is singular, "1 tablet" (D64: "1 brick").
   defp amount(qty, unit, places) do
-    unit = if unit == "tablets" and Decimal.eq?(qty, 1), do: "tablet", else: unit || "lb"
+    words = RockcutApi.Ingredients.Catalog.count_words()
+
+    unit =
+      if Map.has_key?(words, unit) and Decimal.eq?(qty, 1),
+        do: Map.fetch!(words, unit),
+        else: unit || "lb"
+
     "#{format_number(qty, places)} #{unit}"
   end
 

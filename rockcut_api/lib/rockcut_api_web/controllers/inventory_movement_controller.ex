@@ -2,7 +2,8 @@ defmodule RockcutApiWeb.InventoryMovementController do
   @moduledoc """
   D60 §3.7: movements, by product or lot (newest first), and recording one.
   Movements aren't updated or deleted: a wrong one is undone by an opposite
-  movement or a count.
+  movement or a count. Except a yeast pitch (D64, `Yeast.LotPitches`): each
+  row says `can_remove` for the viewer.
   """
   use RockcutApiWeb, :controller
 
@@ -13,7 +14,15 @@ defmodule RockcutApiWeb.InventoryMovementController do
 
   def index(conn, params) do
     with {:ok, movements} <- Inventory.list_movements(params) do
-      json(conn, %{data: Enum.map(movements, &inventory_movement/1)})
+      removable =
+        RockcutApi.Yeast.LotPitches.removable_ids(movements, conn.assigns.current_user)
+
+      json(conn, %{
+        data:
+          Enum.map(movements, fn m ->
+            m |> inventory_movement() |> Map.put(:can_remove, MapSet.member?(removable, m.id))
+          end)
+      })
     end
   end
 

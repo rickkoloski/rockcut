@@ -129,11 +129,22 @@ export interface Pack {
 
 const toNumber = (v: string | number | null | undefined) => (v == null || v === '' ? null : Number(v))
 
-/** D65 Stop 3 (Stop 2 LEAD note 7): a unit after "$/" is singular: "$0.1055/tablet", "$1.54/lb". */
-export const perUnitLabel = (unit: string | null | undefined) => (unit === 'tablets' ? 'tablet' : (unit ?? 'lb'))
+/**
+ * The labels an `each` product's count reads in, plural → singular: "tablets"
+ * on a Tablet (D65 §4.3); D64 §4.1 "bricks" on a Dry yeast and "pitchables"
+ * on a Liquid one.
+ */
+export const COUNT_WORDS: Record<string, string> = { tablets: 'tablet', bricks: 'brick', pitchables: 'pitchable' }
 
-/** Whole-number units: `each` (D62 §3.5) and its "tablets" label on a Tablet product (D65 §4.3). */
-export const isCountUnit = (unit: string | null | undefined) => unit === 'each' || unit === 'tablets'
+/** D65 Stop 3 (Stop 2 LEAD note 7): a unit after "$/" is singular: "$0.1055/tablet", "$76.99/brick", "$1.54/lb". */
+export const perUnitLabel = (unit: string | null | undefined) => (unit && COUNT_WORDS[unit]) || (unit ?? 'lb')
+
+/** D64: a pack of one that is the unit itself (a brick of 1 brick), so packs and units are the same count. */
+export const packIsUnit = (name: string | null | undefined, size: string | number | null | undefined, unit: string | null | undefined) =>
+  isCountUnit(unit) && Number(size) === 1 && packPlural(name) === unit
+
+/** Whole-number units: `each` (D62 §3.5) and its labels, "tablets" (D65 §4.3), "bricks" and "pitchables" (D64). */
+export const isCountUnit = (unit: string | null | undefined) => unit === 'each' || (!!unit && unit in COUNT_WORDS)
 
 /** Decimal places a quantity in `unit` takes: `each` (or "tablets") is whole numbers (D62 §3.5). */
 export const unitDecimals = (unit: string | null | undefined) => (isCountUnit(unit) ? 0 : LB_DECIMALS)
@@ -151,7 +162,12 @@ export function packPlural(name: string | null | undefined): string {
  * says it: "55 lb sacks", and a count "tubs of 872 tablets" (never "872 tablets tubs").
  */
 export const packSizeText = (name: string | null | undefined, size: number | string, unit: string = 'lb') =>
-  isCountUnit(unit) ? `${packPlural(name)} of ${Number(size)} ${unit}` : `${Number(size)} ${unit} ${packPlural(name)}`
+  // D64: a pack of one that is the unit itself (a brick of 1 brick) reads just "bricks".
+  isCountUnit(unit) && Number(size) === 1 && packPlural(name) === unit
+    ? unit
+    : isCountUnit(unit)
+      ? `${packPlural(name)} of ${Number(size)} ${unitWord(unit, Number(size))}`
+      : `${Number(size)} ${unit} ${packPlural(name)}`
 
 /** "sack" for 1, else the plural. */
 export const packWord = (name: string | null | undefined, n: number) => (n === 1 ? (name ?? 'pack') : packPlural(name))
@@ -174,19 +190,22 @@ export const packSizeLabel = (name: string | null | undefined, unit: string = 'l
  * another `each`.
  */
 export const wholeCountMessage = (productName: string | null | undefined, unit: string | null | undefined) =>
-  `${productName || 'This product'} is counted in whole ${unit === 'tablets' ? 'tablets' : 'numbers'}`
+  `${productName || 'This product'} is counted in whole ${unit && unit in COUNT_WORDS ? unit : 'numbers'}`
 
 /**
  * The product as the API names it in a refusal (`Products.short_name/1`):
  * the ingredient and the product name, else the ingredient and the form.
  */
-export const productShortName = (p: { name?: string | null; form?: string | null; ingredient?: { name: string } | null } | null | undefined) =>
-  [p?.ingredient?.name, p?.name || p?.form].filter(Boolean).join(' ') || null
+export const productShortName = (
+  p: { name?: string | null; form?: string | null; ingredient?: { name: string } | null; category_key?: string | null } | null | undefined,
+) =>
+  // D64 §4.1: a yeast product goes by its code ("US-05 is counted in whole bricks").
+  (p?.category_key === 'yeast' && p?.name) || [p?.ingredient?.name, p?.name || p?.form].filter(Boolean).join(' ') || null
 
 /** The smallest quantity the API takes, said in the unit. */
 export const minQuantity = (unit: string = 'lb') =>
   // D65 (Stop 1 LEAD note 10): a count starts at 1, "1 tablet", plain "1" for each.
-  unit === 'tablets' ? 'Enter at least 1 tablet' : unit === 'each' ? 'Enter at least 1' : `Enter at least 0.01 ${unit}`
+  unit in COUNT_WORDS ? `Enter at least 1 ${COUNT_WORDS[unit]}` : unit === 'each' ? 'Enter at least 1' : `Enter at least 0.01 ${unit}`
 
 /**
  * A quantity's boxes (packs and the loose part, or the total alone when
@@ -245,7 +264,7 @@ export function quantityToPacks(quantity: number, packSize: number, unit: string
 }
 
 /** D65 lead decisions 1 (gap 6): a unit word for `n`: "1 tablet", else as given ("2 tablets", "1 lb"). */
-export const unitWord = (unit: string, n: number) => (unit === 'tablets' && n === 1 ? 'tablet' : unit)
+export const unitWord = (unit: string, n: number) => (n === 1 && COUNT_WORDS[unit]) || unit
 
 const fmtAmount = (n: number, unit: string) => `${n.toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unitWord(unit, n)}`
 

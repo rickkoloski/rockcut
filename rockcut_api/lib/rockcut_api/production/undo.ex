@@ -28,13 +28,22 @@ defmodule RockcutApi.Production.Undo do
 
   **Linked tasks** (D49 §3.12): both end with `TaskLink.sync!/1` in the same
   transaction. Tasks aren't tracked; they follow the steps.
+
+  **Yeast harvest steps** (D64 §5.4): yeast rows aren't tracked either. An
+  Undo that puts a Yeast harvest step back to not done takes its harvest
+  out as un-checking does (`Yeast.Harvests.unrecord_step/2`, refused the
+  same way once the brink was pitched from or counted since); one that would
+  put a step back to done with a harvest recorded is refused
+  (`:yeast_recheck`, "Check it off again to record the harvest."), since the
+  harvest can't be put back faithfully. A Yeast dumped check-off (only
+  columns on the step) is put back like any other.
   """
   import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
   alias RockcutApi.Brewing.Batch
-  alias RockcutApi.Production.{BatchChanges, Steps, TaskLink, UndoRecord}
+  alias RockcutApi.Production.{BatchChanges, Batches, Steps, TaskLink, UndoRecord}
 
   @ttl_seconds 120
 
@@ -107,7 +116,7 @@ defmodule RockcutApi.Production.Undo do
         cond do
           DateTime.compare(record.expires_at, now) == :lt -> {:error, :undo_expired}
           record.user_id != user_id -> {:error, {:undo_not_yours, first_name(record)}}
-          true -> restore(record)
+          true -> restore(record, maker(record))
         end
 
       _ ->
@@ -122,7 +131,15 @@ defmodule RockcutApi.Production.Undo do
     end
   end
 
-  defp restore(record) do
+  # Who made the change, as they were then (the device beside them, D50).
+  defp maker(record) do
+    case Repo.get(User, record.user_id) do
+      %User{} = user -> %{user | on_device_id: record.device_id}
+      nil -> nil
+    end
+  end
+
+  defp restore(record, user) do
     entries = record.entries["rows"]
     vessels = Map.get(record.entries, "vessels", %{})
     watched = Map.get(record.entries, "steps", %{})
@@ -138,7 +155,7 @@ defmodule RockcutApi.Production.Undo do
           end)
 
       try do
-        put_back!(entries)
+        put_back!(entries, user)
       rescue
         # Putting rows back over changed ones can fail on a key; that's stale.
         e in Exqlite.Error ->
@@ -180,8 +197,12 @@ defmodule RockcutApi.Production.Undo do
   end
 
   # Put every row back, then check the order rules on the result.
-  defp put_back!(entries) do
+  defp put_back!(entries, user) do
     {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
+
+    # D64 Stop 4: a batch the write made (Plan, Split) that yeast went into
+    # or came out of since isn't deleted by its Undo.
+    Batches.yeast_blocked!(for e <- gone, e["table"] == "batches", do: e["id"])
 
     # Children before parents, and within a table the later rows first (a
     # split's parts before their parent); put back the other way (D48 QA M2).
@@ -207,6 +228,7 @@ defmodule RockcutApi.Production.Undo do
       |> Enum.unzip()
 
     flips = List.flatten(flips)
+    yeast_flips!(back, flips, user)
 
     for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
         do: put_row!(e["table"], e["before"])
@@ -216,6 +238,38 @@ defmodule RockcutApi.Production.Undo do
     Steps.order_after_undo!(
       for({id, true} <- flips, do: id),
       for({id, false} <- flips, do: id)
+    )
+  end
+
+  # D64 §5.4: a Yeast harvest step going back to not done loses its
+  # harvest (or the Undo is refused, `{:yeast_locked, brink}`); one going
+  # back to done with a harvest recorded is refused.
+  defp yeast_flips!(back, flips, user) do
+    before =
+      for e <- back, e["table"] == "production_steps", into: %{}, do: {e["id"], e["before"]}
+
+    types = yeast_type_ids()
+
+    for {id, done?} <- flips, before[id]["step_type_id"] in types do
+      if done? do
+        if before[id]["yeast_outcome"] == "harvested", do: Repo.rollback(:yeast_recheck)
+      else
+        case RockcutApi.Yeast.Harvests.unrecord_step(id, user) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end
+    end
+
+    :ok
+  end
+
+  defp yeast_type_ids do
+    Repo.all(
+      from(t in RockcutApi.Production.StepType,
+        where: t.behavior == "yeast_harvest",
+        select: t.id
+      )
     )
   end
 
@@ -465,7 +519,7 @@ defmodule RockcutApi.Production.Undo do
 
   defp done?(row), do: (row || %{})["done_on"] != nil
 
-  @done_columns ~w(done_on done_by_id done_on_device_id completed_at)
+  @done_columns ~w(done_on done_by_id done_on_device_id completed_at yeast_outcome yeast_note)
 
   defp keep_done(e, now),
     do: %{e | "before" => Map.merge(e["before"], Map.take(now, @done_columns))}

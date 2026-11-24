@@ -25,6 +25,10 @@ import StatusChip from '../../components/StatusChip'
 import IngredientFormDialog from './IngredientFormDialog'
 import ProductDialog from './ProductDialog'
 import GrainsList, { NONE, type GrainFilters } from './GrainsList'
+import YeastSettingsDialog from './YeastSettingsDialog'
+import { YeastTabs } from './BrinksPage'
+import { useStrainTypes } from '../../hooks/useStrainTypes'
+import ScienceIcon from '@mui/icons-material/ScienceOutlined'
 
 /** D65 lead decisions 3 (gap 5): the Notes column is dropped on a phone (the notes go under the name). */
 const WIDE_ONLY = { display: { xs: 'none', sm: 'table-cell' } }
@@ -141,6 +145,10 @@ export default function IngredientsList() {
   const [manufacturerId, setManufacturerId] = useState<number | ''>('')
   const [supplierId, setSupplierId] = useState<number | ''>('')
   const [onHandOnly, setOnHandOnly] = useState(false)
+  // D64 §6.1: Yeast Strains' form and Strain Type filters, and its settings.
+  const [formFilter, setFormFilter] = useState('')
+  const [strainTypeId, setStrainTypeId] = useState<number | ''>('')
+  const [yeastSettings, setYeastSettings] = useState(false)
   const { mode } = useQuantityDisplay()
 
   const { data: categories = [], isSuccess: categoriesLoaded } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
@@ -174,6 +182,11 @@ export default function IngredientsList() {
   const { category: d65Category, children: d65Children } = keyedCategories(categories, d65Key ?? '')
   const d65View = !!d65Key && !!d65Category
   const productsView = grainsView || hopsView || d65View
+  // D64 §6.1: Yeast Strains is one of them, with a Lab, Code and Type.
+  const yeastView = d65Key === 'yeast'
+  const { data: strainTypesReply } = useStrainTypes()
+  const strainTypes = strainTypesReply?.data ?? []
+  const strainTypeNames = new Map(strainTypes.map((t) => [t.id, t.name]))
 
   // Every ingredient, so Grains includes its children's (the API filters one category only).
   const { data: allIngredients = [] } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
@@ -210,6 +223,7 @@ export default function IngredientsList() {
     manufacturerId,
     supplierId,
     onHandOnly,
+    ...(yeastView ? { form: formFilter, strainTypeId } : {}),
   }
   // D62 lead decisions 1, gap 5: only the manufacturers with products here (maltsters on Grains, hop growers on Hops).
   const manufacturers = manufacturersFor(
@@ -228,6 +242,9 @@ export default function IngredientsList() {
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library' }]}
         title="Ingredient Library"
       />
+
+      {/* D64 §6.3: Yeast Strains sits beside its Brinks. */}
+      {yeastView && <YeastTabs value="strains" strainsHref={`/ingredients?category=${categoryId}`} />}
 
       {/* D52: search and category on the left; Add and the settings gear on the right. */}
       <PageToolbar
@@ -255,10 +272,10 @@ export default function IngredientsList() {
               {d65View
                 ? [
                     <MenuItem key="p" onClick={() => { setAddAnchor(null); setFormOpen('d65-product') }} data-testid="add-d65-product">
-                      Product
+                      {yeastView ? 'Yeast product' : 'Product'}
                     </MenuItem>,
                     <MenuItem key="i" onClick={() => { setAddAnchor(null); setFormOpen('d65') }} data-testid="add-d65-ingredient">
-                      Ingredient
+                      {yeastView ? 'Strain' : 'Ingredient'}
                     </MenuItem>,
                   ]
                 : hopsView
@@ -291,6 +308,13 @@ export default function IngredientsList() {
                     <ListItemIcon><BusinessIcon fontSize="small" /></ListItemIcon>
                     <ListItemText primary="Companies" secondary="Manufacturers, suppliers, partner breweries" />
                   </MenuItem>
+                  {/* D64 §6.5: the yeast settings (Strain types now; brinks from Stop 2). */}
+                  {yeastView && (
+                    <MenuItem onClick={() => { close(); setYeastSettings(true) }} data-testid="ingredients-settings-yeast">
+                      <ListItemIcon><ScienceIcon fontSize="small" /></ListItemIcon>
+                      <ListItemText primary="Yeast settings" secondary="Brinks and strain types" />
+                    </MenuItem>
+                  )}
                 </>
               )}
             </SettingsGear>
@@ -328,8 +352,8 @@ export default function IngredientsList() {
           {productsView && (
             <>
               <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
-                <InputLabel id="grains-maltster-label">{manufacturerLabel(grainsView ? 'grains' : 'hops')}</InputLabel>
-                <Select labelId="grains-maltster-label" id="grains-maltster" label={manufacturerLabel(grainsView ? 'grains' : 'hops')} value={manufacturers.length || someNone ? manufacturerId : ''} onChange={(e) => setManufacturerId(e.target.value as number | '')} data-testid="grains-maltster">
+                <InputLabel id="grains-maltster-label">{manufacturerLabel(grainsView ? 'grains' : (d65Key ?? 'hops'))}</InputLabel>
+                <Select labelId="grains-maltster-label" id="grains-maltster" label={manufacturerLabel(grainsView ? 'grains' : (d65Key ?? 'hops'))} value={manufacturers.length || someNone ? manufacturerId : ''} onChange={(e) => setManufacturerId(e.target.value as number | '')} data-testid="grains-maltster">
                   <MenuItem value="">All</MenuItem>
                   {someNone && <MenuItem value={NONE}>None</MenuItem>}
                   {manufacturers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
@@ -342,6 +366,29 @@ export default function IngredientsList() {
                   {suppliers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
+              {yeastView && (
+                <>
+                  <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 130 } }} size="small">
+                    <InputLabel id="yeast-form-label">Form</InputLabel>
+                    <Select labelId="yeast-form-label" id="yeast-form" label="Form" value={formFilter} onChange={(e) => setFormFilter(e.target.value)} data-testid="yeast-form-filter">
+                      <MenuItem value="">All</MenuItem>
+                      <MenuItem value="Dry">Dry</MenuItem>
+                      <MenuItem value="Liquid">Liquid</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 130 } }} size="small">
+                    <InputLabel id="yeast-type-label">Type</InputLabel>
+                    <Select labelId="yeast-type-label" id="yeast-type" label="Type" value={strainTypes.length ? strainTypeId : ''} onChange={(e) => setStrainTypeId(e.target.value as number | '')} data-testid="yeast-type-filter">
+                      <MenuItem value="">All</MenuItem>
+                      {strainTypes.map((t) => (
+                        <MenuItem key={t.id} value={t.id}>
+                          {t.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </>
+              )}
               <FormControlLabel
                 control={<Switch checked={onHandOnly} onChange={(e) => setOnHandOnly(e.target.checked)} data-testid="grains-on-hand-only" />}
                 label="On hand only"
@@ -359,7 +406,7 @@ export default function IngredientsList() {
       ) : grainsView ? (
         <GrainsList children={children} products={products} grains={grains} types={types} filters={filters} mode={mode} />
       ) : d65View && d65Key ? (
-        <GrainsList categoryKey={d65Key} children={d65Groups} products={d65Products} grains={d65Ingredients} types={types} filters={filters} mode={mode} />
+        <GrainsList categoryKey={d65Key} children={d65Groups} products={d65Products} grains={d65Ingredients} types={types} filters={filters} mode={mode} strainTypes={strainTypeNames} />
       ) : hopsView && hopsCategory ? (
         <GrainsList categoryKey="hops" children={[hopsCategory]} products={hopProducts} grains={hops} types={types} filters={{ ...filters, categoryId: null }} mode={mode} />
       ) : (
@@ -407,9 +454,10 @@ export default function IngredientsList() {
         onClose={() => setFormOpen(null)}
         fixedCategoryId={d65Children.length === 0 || categoryId !== d65Category?.id ? (categoryId as number) : undefined}
         defaultCategoryId={d65Category?.id}
-        noun="Ingredient"
+        noun={yeastView ? 'Strain' : 'Ingredient'}
       />
       <ProductDialog open={formOpen === 'd65-product'} onClose={() => setFormOpen(null)} categoryKey={d65Key ?? undefined} />
+      <YeastSettingsDialog open={yeastSettings} onClose={() => setYeastSettings(false)} />
     </>
   )
 }

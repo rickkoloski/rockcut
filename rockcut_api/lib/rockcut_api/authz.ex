@@ -513,6 +513,19 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :ingredients) when action in [:read, :write],
     do: member_of?(user, "brewery")
 
+  # D64 yeast settings (spec §6.5, A7, A13): the Strain Type list (and, from
+  # Stop 2, the brinks). Any Brewery member reads it; owners (above) and
+  # Brewery managers change it. No device (`Authz.Device` denies by default).
+  def can?(%User{} = user, :read, :yeast_settings), do: member_of?(user, "brewery")
+  def can?(%User{} = user, :manage, :yeast_settings), do: role_in(user, "brewery") == :manager
+
+  # D64 §8 (A8): a yeast count (and, from Stop 3, an entry) is changed or
+  # deleted by the person who entered it or a Brewery manager; owners pass
+  # above. The record's own rules (a later pitch locks a count) are
+  # `Yeast.Counts`'.
+  def can?(%User{id: id} = user, :change, {:yeast_record, %{entered_by_id: by}}),
+    do: (member_of?(user, "brewery") and id == by) or role_in(user, "brewery") == :manager
+
   # D61 malt contracts (spec decision 25): any Brewery member reads them;
   # owners (above) and Brewery managers create, change and delete them. No
   # device (`Authz.Device` denies by default).

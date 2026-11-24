@@ -9,6 +9,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import FormDialog from '../../components/FormDialog'
 import parseApiError from '../../lib/parseApiError'
+import { useStrainTypes } from '../../hooks/useStrainTypes'
 
 interface IngredientFormDialogProps {
   open: boolean
@@ -41,6 +42,8 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
   const [ions, setIons] = useState<Record<string, string>>(() =>
     Object.fromEntries(IONS.map((i) => [i.key, ingredient?.ions?.[i.key] != null ? Number(ingredient.ions[i.key]).toFixed(1) : ''])),
   )
+  // D64 (A13): a yeast strain's type; only active types are offered, and the one it has stays.
+  const [strainTypeId, setStrainTypeId] = useState<number | ''>(ingredient?.yeast_strain_type_id ?? '')
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
 
@@ -62,6 +65,9 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         .flatMap((p) => [{ category: p, child: false }, ...categories.filter((c) => c.parent_id === p.id).sort(byOrder).map((c) => ({ category: c, child: true }))])
   const grain = parentId != null
   const salts = !!categories.find((c) => c.id === categoryId)?.catalog?.ions
+  const yeast = categories.find((c) => c.id === categoryId)?.catalog?.key === 'yeast'
+  const { data: strainTypesReply } = useStrainTypes()
+  const strainTypes = (strainTypesReply?.data ?? []).filter((t) => t.active || t.id === ingredient?.yeast_strain_type_id)
   const ionError = (text: string) => {
     const p = parseDecimal(text, 1)
     if (!p.ok) return p.error
@@ -70,12 +76,12 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
   const ionsOk = !salts || IONS.every((i) => !ionError(ions[i.key]))
 
   const createIngredient = useApiCreate<Ingredient>('/api/ingredients', {
-    invalidateKeys: [['ingredients']],
+    invalidateKeys: [['ingredients'], ['yeast_strain_types']],
   })
 
   const updateIngredient = useApiUpdate<Ingredient>(
     (id) => `/api/ingredients/${id}`,
-    { invalidateKeys: [['ingredients'], ['ingredient', ingredient?.id], ['ingredient_products']] }
+    { invalidateKeys: [['ingredients'], ['ingredient', ingredient?.id], ['ingredient_products'], ['yeast_strain_types']] }
   )
 
   const handleSubmit = async () => {
@@ -88,6 +94,8 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
       }
       // Gap 1: the formula goes only with a Water Salts ingredient; elsewhere a stored one is kept as it is.
       if (salts) payload.formula = formula.trim() || null
+      // D64: the type goes only with a yeast strain.
+      if (yeast) payload.yeast_strain_type_id = strainTypeId || null
 
       // D65 Stop 3: the ions go with the ingredient, one request and one transaction.
       if (salts)
@@ -147,6 +155,29 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
             {options.map(({ category, child }) => (
               <MenuItem key={category.id} value={category.id} sx={child ? { pl: 4 } : undefined}>
                 {category.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
+      {yeast && (
+        <FormControl fullWidth>
+          <InputLabel id="ingredient-strain-type-label">Strain Type</InputLabel>
+          <Select
+            labelId="ingredient-strain-type-label"
+            id="ingredient-strain-type"
+            label="Strain Type"
+            value={strainTypes.length ? strainTypeId : ''}
+            onChange={(e) => setStrainTypeId(e.target.value as number | '')}
+            data-testid="ingredient-strain-type"
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {strainTypes.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.name}
+                {!t.active && ' (retired)'}
               </MenuItem>
             ))}
           </Select>

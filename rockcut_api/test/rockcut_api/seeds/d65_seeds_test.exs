@@ -239,7 +239,10 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
       Repo.all(
         from p in Product,
           join: i in assoc(p, :ingredient),
-          where: like(i.name, "[SEED]%"),
+          # D64 adds two [SEED] yeast products of its own (`d64_seeds_test`).
+          where:
+            like(i.name, "[SEED]%") and
+              i.category_id not in ^RockcutApi.Ingredients.Catalog.category_ids(["yeast"]),
           order_by: i.name,
           preload: [:lots, offers: :prices],
           select: {i.name, p}

@@ -27,11 +27,10 @@ defmodule RockcutApi.Ingredients.CatalogUnitsTest do
       assert Enum.sort(Catalog.category_ids(["grains"])) == Enum.sort([c.grains.id, c.base.id])
     end
 
-    test "D65 manages every key but yeast and future; contracts count sacks for grain and lb for hops" do
-      for key <- ~w(grains hops fruits spices sugars consumables),
+    test "D65 manages every key but future (D64: yeast too); contracts count sacks for grain and lb for hops" do
+      for key <- ~w(grains hops fruits spices sugars consumables yeast),
           do: assert(Catalog.managed?(key))
 
-      refute Catalog.managed?("yeast")
       refute Catalog.managed?("future")
       refute Catalog.managed?(nil)
       assert Catalog.contract_unit("grains") == :packs
@@ -40,7 +39,10 @@ defmodule RockcutApi.Ingredients.CatalogUnitsTest do
       assert Catalog.units("grains") == ["lb"] and Catalog.forms("grains") == []
       assert Catalog.units("hops") == ["lb"]
       assert Catalog.forms("hops") == ["T90 Pellet", "Cryo", "Whole leaf", "Extract"]
-      assert Catalog.pack_names() == ~w(sack box bag pail drum case jar bottle jug tub)
+
+      assert Catalog.pack_names() ==
+               ~w(sack box bag pail drum case jar bottle jug tub brick pitchable)
+
       assert Catalog.pack_names("grains") == ["sack"] and Catalog.pack_names("hops") == ["box"]
       assert {"box", size} = Catalog.fixed_pack("hops")
       assert Decimal.eq?(size, 11)

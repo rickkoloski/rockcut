@@ -8,7 +8,7 @@ defmodule RockcutApi.Production.StepType do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @behaviors ~w(plain brew set_temp transfer split cip package)
+  @behaviors ~w(plain brew set_temp transfer split cip package yeast_harvest)
   @max_name 30
 
   schema "production_step_types" do

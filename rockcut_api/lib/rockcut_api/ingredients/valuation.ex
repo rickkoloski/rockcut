@@ -243,16 +243,17 @@ defmodule RockcutApi.Ingredients.Valuation do
     }
   end
 
-  # The quantity and expired part summed per unit, by unit name.
+  # The quantity and expired part summed per unit and label: D64 §13, a
+  # yeast's bricks and pitchables (both `each`) are their own subtotals, as
+  # tablets are (D65 gap 8); a unit with no label of its own reads as itself.
   defp by_unit(rows) do
     rows
-    |> Enum.group_by(& &1.unit)
-    |> Enum.sort_by(fn {unit, _} -> unit end)
-    |> Enum.map(fn {unit, rs} ->
+    |> Enum.group_by(&{&1.unit, &1.unit_label || &1.unit})
+    |> Enum.sort_by(fn {key, _} -> key end)
+    |> Enum.map(fn {{unit, label}, rs} ->
       %{
         unit: unit,
-        # Lead decisions 1 (gap 8): "tablets" when every row is a Tablet product.
-        unit_label: Units.shared_label(unit, Enum.map(rs, & &1.unit_label)),
+        unit_label: Units.shared_label(unit, Enum.map(rs, fn _ -> label end)),
         quantity: sum(rs, :quantity),
         expired: sum(rs, :expired)
       }

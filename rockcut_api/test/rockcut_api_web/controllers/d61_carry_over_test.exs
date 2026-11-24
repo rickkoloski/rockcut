@@ -134,7 +134,8 @@ defmodule RockcutApiWeb.D61CarryOverTest do
                  errors(req(c.brewer, :post, "/api/category_field_definitions", body.(cat.id)))
       end
 
-      yeast = Repo.insert!(%IngredientCategory{name: "Yeast Strains", key: "yeast"})
+      # D64 §4.1: Yeast Strains takes no field any more; Other Consumables does.
+      yeast = Repo.insert!(%IngredientCategory{name: "Other Consumables", key: "consumables"})
 
       assert {201, %{"data" => %{"id" => id}}} =
                req(c.brewer, :post, "/api/category_field_definitions", body.(yeast.id))
@@ -152,13 +153,14 @@ defmodule RockcutApiWeb.D61CarryOverTest do
   end
 
   describe "no custom fields on Hops (D62 split Amendment)" do
-    test "refused on Hops, and moving one there; allowed on Yeast Strains", c do
+    test "refused on Hops, and moving one there; allowed on Other Consumables", c do
       body = &%{category_id: &1, field_name: "Grower", field_type: "text"}
 
       assert %{"category_id" => ["Hops use features, not custom fields"]} =
                errors(req(c.brewer, :post, "/api/category_field_definitions", body.(c.hops.id)))
 
-      yeast = Repo.insert!(%IngredientCategory{name: "Yeast Strains", key: "yeast"})
+      # D64 §4.1: Yeast Strains takes no field any more; Other Consumables does.
+      yeast = Repo.insert!(%IngredientCategory{name: "Other Consumables", key: "consumables"})
 
       assert {201, %{"data" => %{"id" => id}}} =
                req(c.brewer, :post, "/api/category_field_definitions", body.(yeast.id))

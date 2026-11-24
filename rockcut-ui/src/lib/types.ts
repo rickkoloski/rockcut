@@ -126,6 +126,10 @@ export interface CategoryCatalog {
   allows_fields: boolean
   /** D65 (salts amendment): Water Salts' ingredients carry ion values. */
   ions?: boolean
+  /** D64 §4.1: per form, the pack a yeast offer or lot starts with (Dry brick, Liquid pitchable); {} elsewhere. */
+  form_packs?: Record<string, string>
+  /** D64 §4.1: per form, how `each` reads (Dry bricks, Liquid pitchables); {} elsewhere. */
+  form_unit_labels?: Record<string, string>
 }
 
 export interface CategoryFieldDefinition {
@@ -152,6 +156,8 @@ export interface Ingredient {
   ions?: Record<string, string> | null
   /** D65 lead decisions 1 (gap 13): why Delete is refused (it has products or lots), or null. */
   delete_blocked?: string | null
+  /** D64 (A13): a yeast strain's type (Ale, Lager, Brett, Lacto); null elsewhere. */
+  yeast_strain_type_id?: number | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -194,7 +200,7 @@ export interface IngredientLotSummary {
 export interface IngredientLot {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: CategorySummary | null } | null
+  ingredient: { id: number; name: string; category: CategorySummary | null; yeast_strain_type_id?: number | null } | null
   lot_number: string | null
   /** D60: the product (grain lots). */
   product_id: number | null
@@ -331,7 +337,7 @@ export interface SupplierOffer {
 export interface IngredientProduct {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: CategorySummary | null } | null
+  ingredient: { id: number; name: string; category: CategorySummary | null; yeast_strain_type_id?: number | null } | null
   category: CategorySummary | null
   /** D62: the top-level category's key (`grains` for a grain on Base). */
   category_key: string | null
@@ -383,8 +389,34 @@ export interface InventoryMovement {
   /** A receipt from an order with no note of its own names the order ("PO-7", "Order #12"). */
   note: string | null
   purchase_order_id?: number | null
+  /** D64 §4.6: the batch a pitch of purchased yeast went into. */
+  batch_id?: number | null
+  /** Lead decisions 3, gap 5: a yeast pitch this viewer may take back. */
+  can_remove?: boolean
   entered_by: { id: number; name: string } | null
   inserted_at: string
+}
+
+/** D64 (A13): a yeast Strain Type in the yeast settings. */
+export interface YeastStrainType {
+  id: number
+  name: string
+  position: number
+  active: boolean
+  retired_at: string | null
+  /** How many strains have it; one in use can be renamed or retired, not deleted. */
+  in_use: number
+}
+
+/** D64 §6.4: a batch a pitch can name (`GET /api/yeast/batches`). */
+export interface YeastBatch {
+  id: number
+  /** "Galactic #41", "Altruism P1". */
+  label: string
+  number: string
+  status: string
+  /** Not completed or dumped: the picker offers these. */
+  open: boolean
 }
 
 // ── D61 purchasing ──
@@ -601,7 +633,10 @@ export interface Batch {
   id: number
   brand_id: number
   brand: Brand | null
-  batch_number: string
+  /** Null for a planned batch and a split's part. */
+  batch_number: string | null
+  /** The batch page's own read: "#44", "#44.1", "P3"; "" when it's none of them. */
+  label?: string
   status: string
   actual_og: number | null
   actual_fg: number | null
@@ -1430,4 +1465,74 @@ export interface IdeaSendOptions {
   due_on: string | null
   checklist: { total: number; open: number }
   already_sent: boolean
+}
+
+/** D64 §6.3: a cell count as the Brinks tab shows it. */
+export interface YeastCountSummary {
+  id: number
+  counted_on: string
+  viable_millions_per_ml: string
+  viability_pct: string
+  /** Decision 18: the latest harvest's day when this count is from before it; null otherwise. */
+  before_harvest_on: string | null
+}
+
+/** D64 §4.5: the yeast in a brink now. */
+export interface YeastContents {
+  harvest_id: number
+  lock_version: number
+  on_hand_lb: string
+  generation: number
+  coferment: boolean
+  product_ids: number[]
+  /** The strains' codes ("US-05"), in order. */
+  strains: string[]
+  harvested_on: string | null
+  first_harvested_on: string | null
+  sources: { batch_id: number | null; batch: string | null; generation: number | null; strains: string[]; lb: string; occurred_on: string }[]
+  count: YeastCountSummary | null
+}
+
+/** D64 §4.4, §6.3: a brink with its state (`GET /api/yeast/brinks`). */
+export interface YeastBrink {
+  id: number
+  name: string
+  empty_weight_lb: string | null
+  position: number
+  active: boolean
+  dirty: boolean
+  dirty_since: string | null
+  /** It has records, so it can be retired but not deleted. */
+  has_history: boolean
+  /** An open "Count YB2" task. */
+  recount_due: boolean
+  /** An open "Clean YB2" task. */
+  clean_due: boolean
+  yeast: YeastContents | null
+}
+
+/** D64 §6.3: one record in a brink's History. */
+export interface YeastHistoryRecord {
+  id: number
+  status: 'in_brink' | 'emptied' | 'voided'
+  generation: number
+  coferment: boolean
+  emptied_on: string | null
+  entries: {
+    id: number
+    kind: 'harvested' | 'pitched' | 'dumped' | 'adjusted'
+    quantity_lb: string
+    occurred_on: string
+    batch: string | null
+    generation: number | null
+    strains: string[]
+    note: string | null
+    entered_by: { id: number; name: string } | null
+    device: string | null
+    /** Stop 3: the Yeast harvest step a harvest came from. */
+    step_id?: number | null
+    /** Stop 3 (spec §8, A8): Remove is offered to this viewer (a pitch, dump or adjustment, the record's latest, theirs or a manager's). */
+    can_remove?: boolean
+  }[]
+  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; lock_version: number; entered_by: { id: number; name: string } | null; can_change?: boolean }[]
 }

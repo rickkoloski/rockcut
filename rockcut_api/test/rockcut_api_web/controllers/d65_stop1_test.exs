@@ -484,10 +484,9 @@ defmodule RockcutApiWeb.D65Stop1Test do
                  )
       end
 
-      yeast = keyed_category!("Yeast Strains", "yeast")
-
+      # D64 §4.1: Yeast Strains takes no field any more; Other Consumables still does.
       {201, %{"data" => %{"id" => id}}} =
-        req(c.owner, :post, "/api/category_field_definitions", field.(yeast.id))
+        req(c.owner, :post, "/api/category_field_definitions", field.(c.consumables.id))
 
       assert %{"category_id" => ["Fruits use products, not custom fields"]} ==
                errors(

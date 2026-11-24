@@ -233,7 +233,7 @@ test('gaps 6, 8: "1 tablet" on a lot; "tablets" on the order total, the Receive 
   await page.goto('/ingredients/totals')
   await page.getByTestId('totals-inventory-supplier').click()
   await page.getByRole('option', { name: supplier.name }).click()
-  await expect(page.getByTestId('totals-inventory-total-each')).toHaveText('1 tablet')
+  await expect(page.getByTestId('totals-inventory-total-tablets')).toHaveText('1 tablet')
 })
 
 test('gap 9: the Totals Manufacturer filter has None, which shows only the products with no manufacturer', async ({ page }) => {

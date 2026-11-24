@@ -61,7 +61,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const d65 = isD65Key(product.category_key)
   const featureTypes = hops || d65 ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : typesFor(types, product.category?.id, product.category?.parent_id)
   const basis = lotFeatureBasis(product.features, featureTypes, product.category?.id, product.category?.parent_id)
-  const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id)
+  const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id, product.form ?? null)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
   const crop = parseCropYear(cropYear, coloradoToday())
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot.supplier_party_id))
@@ -176,7 +176,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={loading} />
       ) : (
         d65 ? (
-          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} disabled={loading} />
+          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} required={required} disabled={loading} />
         ) : (
           <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={loading} />
         )

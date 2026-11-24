@@ -44,6 +44,8 @@ import {
 } from '../../../lib/testResults'
 import { FlowsContext, type StepRef } from './flowsContext'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import HarvestDialog, { type HarvestSendResult } from '../HarvestDialog'
+import { harvestDoneText, type HarvestForm, type HarvestPreview } from '../../../lib/harvest'
 import { fitAbove, isUndoShortcut, snackAutoHide, undoHint } from '../../../lib/undoSnack'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
@@ -82,6 +84,9 @@ interface CompletePreview extends ResultPreview {
   done_on: string
   needs_batch_number: boolean
   next_batch_number: string | null
+  /** D64 §5: a Yeast harvest step; `yeast` is what the Harvest dialog shows. */
+  needs_yeast?: boolean
+  yeast?: HarvestPreview | null
 }
 
 export type Failure = { ok: false; error: string; code?: string; body?: Record<string, unknown> }
@@ -133,6 +138,14 @@ type Prompt =
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
   | { kind: 'result'; name: string; question: ResultQuestion; failOnly: boolean; resolve: (o: Outcome | null) => void }
   | { kind: 'confirm'; title: string; message: string; confirmLabel: string; resolve: (ok: boolean) => void }
+  | {
+      kind: 'harvest'
+      name: string
+      batchLabel: string | null
+      yeast: HarvestPreview
+      send: (body: Record<string, unknown>, form: HarvestForm) => Promise<HarvestSendResult | null>
+      resolve: (r: Result | null) => void
+    }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
@@ -361,6 +374,25 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         const result = outcome ? ` · ${outcomeWords(outcome, retestOn)}` : ''
         return following ? `${step.name} done${result} · ${following} moved ${daysWord(move!.days)}` : `${step.name} done${result}`
       }
+      // D64 §5.2: a Yeast harvest step saves from the Harvest dialog, which
+      // asks its own questions and resends; it closes when the write is done.
+      if (pre.needs_yeast && pre.yeast) {
+        const yeast = pre.yeast
+        let last: Result | null = null
+        const send = async (fields: Record<string, unknown>, form: HarvestForm): Promise<HarvestSendResult | null> => {
+          const r = await write<Record<string, unknown>>(
+            (a) => a.post(path, { done_on: doneOn, batch_number: number, answer, ...outcomeBody(outcome), ...fields }),
+            () => `${harvestDoneText(step.name, form, yeast.brinks)}.`,
+          )
+          if (!r.ok && r.code === 'cancelled') return null
+          last = r
+          return r.ok ? { ok: true } : r
+        }
+        const done = await new Promise<boolean>((resolve) =>
+          setPrompt({ kind: 'harvest', name: step.name, batchLabel, yeast, send, resolve: (r) => resolve(r != null) }),
+        )
+        return done ? last : null
+      }
       for (;;) {
         const r = await write<Record<string, unknown>>(
           (a) => a.post(path, { done_on: doneOn, batch_number: number, answer, ...outcomeBody(outcome) }),
@@ -547,6 +579,19 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           onCancel={() => close(null)}
           onApply={(o) => {
             prompt.resolve(o)
+            setPrompt(null)
+          }}
+        />
+      )}
+      {prompt?.kind === 'harvest' && (
+        <HarvestDialog
+          stepName={prompt.name}
+          batchLabel={prompt.batchLabel}
+          yeast={prompt.yeast}
+          onSend={prompt.send}
+          onCancel={() => close(null)}
+          onDone={() => {
+            prompt.resolve({ ok: true, data: {} })
             setPrompt(null)
           }}
         />

@@ -7,7 +7,8 @@ defmodule RockcutApi.Ingredients.Catalog do
   takes its parent's.
 
   D65 §4.2: every category but Yeast Strains (D64) and Future Ingredients is
-  managed (products, packs, movements). Other Consumables' children share
+  managed (products, packs, movements). D64 §4.1: Yeast Strains is managed
+  too (Dry and Liquid, counted `each` in bricks and pitchables). Other Consumables' children share
   its key; their forms, units and packs are the child's, by name (Water
   Salts, Finings), and any other child gets the union of the two (A10).
   """
@@ -16,7 +17,7 @@ defmodule RockcutApi.Ingredients.Catalog do
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.{Ingredient, IngredientCategory}
 
-  @managed ~w(grains hops fruits spices sugars consumables)
+  @managed ~w(grains hops fruits spices sugars consumables yeast)
 
   # D65 §4.2 (A4, A10): forms, units and pack names per category key, and
   # per child of Other Consumables. Units are stored as the screens label
@@ -25,7 +26,9 @@ defmodule RockcutApi.Ingredients.Catalog do
     "fruits" =>
       {["Purée", "Whole", "Juice / concentrate"], ["gal", "lb"], ~w(pail drum case bag box)},
     "spices" => {["Whole", "Ground", "Extract"], ["oz", "fl oz"], ~w(bag jar bottle case)},
-    "sugars" => {["Dry", "Liquid"], ["lb", "gal"], ~w(bag sack pail drum jug)}
+    "sugars" => {["Dry", "Liquid"], ["lb", "gal"], ~w(bag sack pail drum jug)},
+    # D64 §4.1: whole bricks (Dry) and pitchables (Liquid), stored as `each`.
+    "yeast" => {["Dry", "Liquid"], ["each"], ~w(brick pitchable case)}
   }
 
   @consumable_children %{
@@ -47,7 +50,13 @@ defmodule RockcutApi.Ingredients.Catalog do
     "each" => ["tub"]
   }
 
-  @pack_names ~w(sack box bag pail drum case jar bottle jug tub)
+  @pack_names ~w(sack box bag pail drum case jar bottle jug tub brick pitchable)
+
+  # D64 §4.1: a yeast offer or lot starts with its form's pack.
+  @yeast_packs %{"Dry" => "brick", "Liquid" => "pitchable"}
+
+  # D64 §4.1: a yeast product's `each` reads by its form.
+  @yeast_labels %{"Dry" => "bricks", "Liquid" => "pitchables"}
 
   # D62 §3.6, amendments: a hop product is a variety in one of these forms.
   @hop_forms ["T90 Pellet", "Cryo", "Whole leaf", "Extract"]
@@ -118,8 +127,11 @@ defmodule RockcutApi.Ingredients.Catalog do
   def managed?(key) when is_binary(key) or is_nil(key), do: key in @managed
   def managed?(category), do: category |> key() |> managed?()
 
-  @doc "D65 decision 8: grain and hop products need their manufacturer; every other may say None."
-  def manufacturer_required?(key) when key in ["grains", "hops"], do: true
+  @doc """
+  D65 decision 8: grain and hop products need their manufacturer; every
+  other may say None. D64 A3: so does yeast (its lab).
+  """
+  def manufacturer_required?(key) when key in ["grains", "hops", "yeast"], do: true
   def manufacturer_required?(_key), do: false
 
   @doc """
@@ -185,6 +197,19 @@ defmodule RockcutApi.Ingredients.Catalog do
   @doc "The pack names for a product in `category`, as `forms/2`."
   def pack_names(key, category), do: child_list(key, category, 2) || pack_names(key)
 
+  @doc "D64 §4.1: the pack a yeast offer or lot of `form` starts with (Dry brick, Liquid pitchable); nil for another."
+  def yeast_pack(form), do: Map.get(@yeast_packs, form)
+
+  @doc """
+  The pack names an offer or lot of a product in `form` may use: D64 §4.1
+  a Dry yeast brick or case, a Liquid one pitchable or case; every other
+  product its category's (`pack_names/2`).
+  """
+  def pack_names_for("yeast", _category, form) when is_map_key(@yeast_packs, form),
+    do: [Map.fetch!(@yeast_packs, form), "case"]
+
+  def pack_names_for(key, category, _form), do: pack_names(key, category)
+
   @doc "D65 §4.2: the pack an offer in `unit` starts with (lb → bag, gal → pail, …); nil for another."
   def default_pack(unit), do: @default_packs |> Map.get(unit, []) |> List.first()
 
@@ -204,16 +229,21 @@ defmodule RockcutApi.Ingredients.Catalog do
   @doc """
   D65 §4.1, A9: whether a category takes subcategories. Grains and Other
   Consumables do; Hops, Fruits, Spices & Flavorings and Sugars and Extracts
-  don't, nor does a child. Yeast Strains keeps D60's behavior (it may).
+  don't, nor does a child. D64 §4.1: nor does Yeast Strains.
   """
-  def allows_children?(key) when key in ["hops", "fruits", "spices", "sugars"], do: false
+  def allows_children?(key) when key in ["hops", "fruits", "spices", "sugars", "yeast"],
+    do: false
+
   def allows_children?(_key), do: true
 
   @doc """
   D65 §4.1: whether a category takes custom fields: Grains, Hops, Fruits,
-  Spices & Flavorings and Sugars and Extracts use features instead.
+  Spices & Flavorings and Sugars and Extracts use features instead. D64
+  §4.1: so does Yeast Strains.
   """
-  def allows_fields?(key) when key in ["grains", "hops", "fruits", "spices", "sugars"], do: false
+  def allows_fields?(key) when key in ["grains", "hops", "fruits", "spices", "sugars", "yeast"],
+    do: false
+
   def allows_fields?(_key), do: true
 
   @doc """
@@ -229,10 +259,20 @@ defmodule RockcutApi.Ingredients.Catalog do
   @doc """
   The display label of a product's unit: "tablets" for `each` on a Tablet
   product (D65 finings amendment; the stored unit stays `each`), else the
-  unit itself.
+  unit itself. D64 §4.1: with the category `key`, a yeast `each` reads by
+  its form, "bricks" (Dry) and "pitchables" (Liquid); a key is needed, since
+  a Liquid fining may be `each` too.
   """
-  def unit_label("each", "Tablet"), do: "tablets"
-  def unit_label(unit, _form), do: unit
+  def unit_label(unit, form, key \\ nil)
+
+  def unit_label("each", form, "yeast") when is_map_key(@yeast_labels, form),
+    do: Map.fetch!(@yeast_labels, form)
+
+  def unit_label("each", "Tablet", _key), do: "tablets"
+  def unit_label(unit, _form, _key), do: unit
+
+  @doc "D64: the count words a refusal or label may use, plural → singular."
+  def count_words, do: %{"tablets" => "tablet", "bricks" => "brick", "pitchables" => "pitchable"}
 
   @doc """
   Everything the screens need about a category (with its parent loaded):
@@ -257,6 +297,10 @@ defmodule RockcutApi.Ingredients.Catalog do
         Map.new(@default_packs, fn {unit, _} ->
           {unit, default_pack_in(unit, if(key in @managed, do: pack_names(key, child), else: []))}
         end),
+      # D64 §4.1: per form, the pack a yeast offer or lot starts with.
+      form_packs: if(key == "yeast", do: @yeast_packs, else: %{}),
+      # D64 §4.1: per form, how `each` reads (yeast: bricks, pitchables).
+      form_unit_labels: if(key == "yeast", do: @yeast_labels, else: %{}),
       manufacturer_required: manufacturer_required?(key),
       allows_children: is_nil(category.parent_id) and allows_children?(key),
       allows_fields: allows_fields?(key),

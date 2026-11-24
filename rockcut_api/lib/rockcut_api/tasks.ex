@@ -596,6 +596,9 @@ defmodule RockcutApi.Tasks do
 
         if is_nil(task.due_on), do: renumber(task.department_id, nil)
 
+        # D64 §7: a brink's Clean task clears its dirty mark, however it's ticked.
+        RockcutApi.Yeast.BoardTasks.completed!(completed)
+
         log!(completed, "completed", actor, %{
           "display" => display,
           "completed_on" => iso(today),
@@ -605,6 +608,17 @@ defmodule RockcutApi.Tasks do
         completed
       end
     end)
+  end
+
+  @doc """
+  D64 §7: check off a system task (a brink's Count or Clean, ticked by Add
+  count or Mark clean) on `today` without the day question: on its own day
+  it's `planned_day`, from another day it shows on the day it was done.
+  """
+  def complete_as(%Task{} = task, %User{} = actor, today \\ today()) do
+    dept = Repo.get!(Department, task.department_id)
+    display = if task.due_on in [nil, today], do: nil, else: "completed_day"
+    do_complete(dept, task.id, display, actor, today)
   end
 
   defp resolve_display(%Task{due_on: nil}, _display, _today), do: "completed_day"
@@ -630,6 +644,8 @@ defmodule RockcutApi.Tasks do
       task = fetch!(dept, id)
 
       if Task.done?(task) do
+        RockcutApi.Yeast.BoardTasks.reopening!(task)
+
         reopened =
           task
           |> Task.completion_changeset(%{
@@ -641,6 +657,9 @@ defmodule RockcutApi.Tasks do
           |> Ecto.Changeset.put_change(:position, reopen_position(task))
           |> Repo.update()
           |> ok_or_rollback()
+
+        RockcutApi.Yeast.BoardTasks.uncompleted!(reopened)
+        reopened = RockcutApi.Yeast.BoardTasks.reopened!(reopened, actor)
 
         log!(reopened, "uncompleted", actor, %{
           "completed_on" => iso(task.completed_on),
