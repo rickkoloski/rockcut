@@ -76,6 +76,7 @@ export default function BrandDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // D55 lead decisions 6 (gap 10): a brand that doesn't exist says so.
   if (!brand && httpStatus(brandError) === 404) {
@@ -91,8 +92,13 @@ export default function BrandDetail() {
   }
 
   const handleDelete = async () => {
-    await deleteMutation.mutateAsync(brandId);
-    navigate('/brands');
+    try {
+      await deleteMutation.mutateAsync(brandId);
+      navigate('/brands');
+    } catch (err) {
+      // Gap 13: a brand with batches or recipes says so.
+      setDeleteError(parseApiError(err));
+    }
   };
 
   const fields: { label: string; value: unknown }[] = [
@@ -117,7 +123,7 @@ export default function BrandDetail() {
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Brand"><IconButton data-testid="brand-edit-button" onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Brand"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Brand"><IconButton onClick={() => { setDeleteError(null); setDeleteOpen(true); }} color="error"><DeleteIcon /></IconButton></Tooltip>
           </Box>
         }
       />
@@ -173,7 +179,14 @@ export default function BrandDetail() {
         title="Delete Brand"
         message={`Are you sure you want to delete "${brand.name}"? This action cannot be undone.`}
         loading={deleteMutation.isPending}
-      />
+        testId="brand-delete-confirm"
+      >
+        {deleteError && (
+          <Alert severity="error" sx={{ mt: 1 }} data-testid="brand-delete-error">
+            {deleteError}
+          </Alert>
+        )}
+      </ConfirmDialog>
     </>
   );
 }

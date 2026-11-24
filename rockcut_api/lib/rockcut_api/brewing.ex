@@ -326,9 +326,31 @@ defmodule RockcutApi.Brewing do
     end)
   end
 
+  @doc """
+  Delete a brand. One with batches or recipes is refused (422): they
+  restrict the delete (since Feb; a 500 until D64 lead decisions 3, gap 13).
+  """
   def delete_brand(%Brand{} = brand) do
-    Repo.delete(brand)
+    uses =
+      for {schema, word} <- [{Batch, "batch"}, {Recipe, "recipe"}],
+          n = Repo.aggregate(from(x in schema, where: x.brand_id == ^brand.id), :count),
+          n > 0,
+          do: "#{n} #{plural(word, n)}"
+
+    case uses do
+      [] ->
+        Repo.delete(brand)
+
+      uses ->
+        {:error,
+         {:invalid,
+          %{base: ["#{brand.name} has #{Enum.join(uses, " and ")}, so it can't be deleted."]}}}
+    end
   end
+
+  defp plural(word, 1), do: word
+  defp plural("batch", _), do: "batches"
+  defp plural(word, _), do: word <> "s"
 
   # ── Recipes ────────────────────────────────────────────────────────
 
@@ -552,7 +574,35 @@ defmodule RockcutApi.Brewing do
     |> preload_on_ok(@batch_preloads)
   end
 
-  def delete_batch(%Batch{} = batch), do: Repo.delete(batch)
+  @doc """
+  The batches page's delete, on Production's split rules (lead decisions 7,
+  gaps 20, 21): `:split_part` for a part, `:split` for a batch with parts.
+  D64 Stop 4: refused (422) while the batch has yeast pitched into it or
+  harvested from it. Those are every row that holds a batch (its other rows
+  go with it).
+  """
+  def delete_batch(%Batch{} = batch) do
+    alias RockcutApi.Production.Batches
+
+    Repo.transaction(
+      fn ->
+        cond do
+          batch.split_parent_id ->
+            Repo.rollback(:split_part)
+
+          Batches.split_parent?(batch) ->
+            Repo.rollback(:split)
+
+          reason = Batches.yeast_blocked([batch.id]) ->
+            Repo.rollback({:invalid, %{base: [Batches.yeast_message(reason)]}})
+
+          true ->
+            Repo.delete!(batch)
+        end
+      end,
+      mode: :immediate
+    )
+  end
 
   # ── Brew Turns ─────────────────────────────────────────────────────
 

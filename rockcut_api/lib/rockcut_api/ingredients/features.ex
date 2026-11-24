@@ -92,6 +92,8 @@ defmodule RockcutApi.Ingredients.Features do
   def validate(features, ingredient_id, target, form) when is_map(features) do
     types = Map.new(Repo.all(FeatureType), &{&1.key, &1})
     applies = applicability(ingredient_id)
+    # D64: the refusals name the category's products ("Liquid sugars", "Liquid yeast").
+    noun = noun(RockcutApi.Ingredients.Catalog.ingredient_key(blank_id(ingredient_id)))
 
     {ok, errors} =
       Enum.reduce(features, {[], %{}}, fn {key, entry}, {ok, errors} ->
@@ -99,7 +101,7 @@ defmodule RockcutApi.Ingredients.Features do
 
         type = Map.get(types, key)
 
-        case check(type, applies, target, entry, form) do
+        case check(type, applies, target, entry, form, noun) do
           {:ok, type, attrs} ->
             {[{type, attrs} | ok], errors}
 
@@ -128,7 +130,7 @@ defmodule RockcutApi.Ingredients.Features do
   `existing` feature keys (none for a new lot). `:ok` or the 422 naming
   each missing one ("Alpha acid can't be blank").
   """
-  def check_required(ingredient_id, validated, existing \\ []) do
+  def check_required(ingredient_id, validated, existing \\ [], form \\ :any) do
     given = for {type, attrs} <- validated, attrs != nil, do: type.key
     dropped = for {type, nil} <- validated, do: type.key
     has = MapSet.new((existing -- dropped) ++ given)
@@ -139,9 +141,12 @@ defmodule RockcutApi.Ingredients.Features do
         where: a.id in ^Enum.map(Map.values(applicability(ingredient_id)), & &1.id),
         where: a.lot_required,
         order_by: [a.sort_order, a.id],
-        select: t
+        select: {t, a.only_form}
       )
       |> Repo.all()
+      # D64 §4.3: a feature for one form only (pitch size, Liquid) is required on that form's lots.
+      |> Enum.filter(fn {_t, only} -> is_nil(only) or form == :any or only == form end)
+      |> Enum.map(&elem(&1, 0))
       |> Enum.reject(&MapSet.member?(has, &1.key))
 
     if missing == [],
@@ -149,6 +154,29 @@ defmodule RockcutApi.Ingredients.Features do
       else:
         {:error,
          {:invalid, %{features: Map.new(missing, &{&1.key, ["#{&1.label} can't be blank"]})}}}
+  end
+
+  @doc """
+  D64 §4.3: the keys of the standards a new lot of `product_id` copies
+  (`copy_standard!/3`), so a required one the product has counts as given
+  (pitch size on a Liquid yeast lot); [] with no product.
+  """
+  def copied_keys(nil), do: []
+
+  def copied_keys(product_id) do
+    from(v in ProductFeatureValue,
+      join: t in assoc(v, :feature_type),
+      join: p in assoc(v, :product),
+      join: i in assoc(p, :ingredient),
+      join: c in assoc(i, :category),
+      join: a in CategoryFeatureType,
+      on:
+        a.feature_type_id == v.feature_type_id and
+          (a.category_id == c.id or a.category_id == c.parent_id),
+      where: v.product_id == ^product_id and a.lot_mode == "copy" and not is_nil(v.value),
+      select: t.key
+    )
+    |> Repo.all()
   end
 
   @doc """
@@ -277,9 +305,9 @@ defmodule RockcutApi.Ingredients.Features do
     end
   end
 
-  defp check(nil, _applies, _target, _entry, _form), do: {:error, "is not a feature"}
+  defp check(nil, _applies, _target, _entry, _form, _noun), do: {:error, "is not a feature"}
 
-  defp check(type, applies, target, entry, form) do
+  defp check(type, applies, target, entry, form, noun) do
     case Map.get(applies, type.id) do
       nil ->
         {:error, "doesn't apply to this category"}
@@ -288,11 +316,12 @@ defmodule RockcutApi.Ingredients.Features do
       # its lots. `only_form` is only on the Sugars row (Brix on Liquid sugars).
       %{only_form: only, product_mode: "none"}
       when is_binary(only) and target == :product and not is_nil(entry) ->
-        {:error, "is entered on #{only} sugar lots, not on the product"}
+        {:error, "is entered on #{only} #{lot_noun(noun)} lots, not on the product"}
 
       # D65: Brix on Liquid sugars only (a value sent for another form; clearing one is fine).
+      # D64: pitch size on Liquid yeast only.
       %{only_form: only} when is_binary(only) and only != form and not is_nil(entry) ->
-        {:error, "is only for #{only} sugars"}
+        {:error, "is only for #{only} #{noun}"}
 
       %{product_mode: "none"} when target == :product ->
         {:error, "isn't set on a product"}
@@ -310,6 +339,15 @@ defmodule RockcutApi.Ingredients.Features do
         check_single(type, entry, target)
     end
   end
+
+  defp noun("yeast"), do: "yeast"
+  defp noun(_key), do: "sugars"
+
+  defp lot_noun("yeast"), do: "yeast"
+  defp lot_noun(_noun), do: "sugar"
+
+  defp blank_id(id) when id in [nil, ""], do: nil
+  defp blank_id(id), do: id
 
   defp check_single(type, entry, target) do
     with {:ok, attrs} <- entry_attrs(entry),

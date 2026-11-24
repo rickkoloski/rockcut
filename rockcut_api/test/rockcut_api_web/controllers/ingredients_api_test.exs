@@ -545,10 +545,11 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       refute Map.has_key?(p["features"], "moisture_pct")
     end
 
-    test "a yeast lot (a category the catalog doesn't manage) needs no product or movement and keeps its status",
+    test "a lot of a category the catalog doesn't manage needs no product or movement and keeps its status",
          c do
-      # D62 Stage 2: hops are managed now (`HopsApiTest`); yeast waits for D64.
-      yeast = keyed_category!("Yeast Strains", "yeast")
+      # D62 Stage 2: hops are managed now (`HopsApiTest`); D64: yeast too, so
+      # a category with no key stands in (Catalog manages none).
+      yeast = Repo.insert!(%RockcutApi.Brewing.IngredientCategory{name: "Misc"})
 
       Repo.insert!(%RockcutApi.Ingredients.CategoryFeatureType{
         category_id: yeast.id,
@@ -669,7 +670,11 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
                  "lock_version" => product_version(c.product.id),
                  # D65: extract keeps 2 decimals now (81.95), so 3 is refused.
-                 features: %{color_lovibond: "2.789", extract_fgdb: "80.165", protein_pct: "11.46"}
+                 features: %{
+                   color_lovibond: "2.789",
+                   extract_fgdb: "80.165",
+                   protein_pct: "11.46"
+                 }
                })
 
       assert errors == %{

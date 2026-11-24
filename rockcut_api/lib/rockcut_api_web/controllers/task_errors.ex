@@ -29,6 +29,7 @@ defmodule RockcutApiWeb.TaskErrors do
     scope_required: "Choose Just this one or This and all following",
     not_in_series: "That task doesn't repeat",
     not_retired: "Retire the Daily item first",
+    yeast_task_open: "The brink already has an open task like this one",
     has_ticks: "That Daily item was ticked, so it can only be restored",
     linked_task_assignees: "A task from the production schedule can have only one person"
   }

@@ -252,7 +252,7 @@ test.describe('purchasing', () => {
     await owner.getByTestId('totals-inventory-supplier').click()
     await owner.getByRole('option', { name: supplier.name }).click()
     await expect(owner.getByTestId(`totals-inventory-${wf.id}-lb`)).toHaveText('600 tablets')
-    await expect(owner.getByTestId('totals-inventory-total-each')).toHaveText('600 tablets')
+    await expect(owner.getByTestId('totals-inventory-total-tablets')).toHaveText('600 tablets')
     await expect(owner.getByTestId('totals-inventory-total-lb')).toHaveText(`${(30 * 55 + 6 * 11 + 2 * 50).toLocaleString('en-US')} lb`)
     await expect(owner.getByTestId('totals-inventory-total')).toContainText('$')
     await owner.context().grantPermissions(['clipboard-read', 'clipboard-write'])

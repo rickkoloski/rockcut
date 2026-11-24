@@ -123,24 +123,39 @@ export const HOP_FORMS = ['T90 Pellet', 'Cryo', 'Whole leaf', 'Extract'] as cons
 
 /**
  * D62: the categories with products, packs and movements. D65 §4.2: every
- * key but Yeast Strains (D64) and Future Ingredients.
+ * key but Yeast Strains and Future Ingredients; D64 §4.1: Yeast Strains too.
  */
-export const MANAGED_KEYS = ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables'] as const
+export const MANAGED_KEYS = ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables', 'yeast'] as const
 export const isManagedKey = (key: string | null | undefined) => !!key && (MANAGED_KEYS as readonly string[]).includes(key)
 
-/** D65: the categories whose products take a form and unit from the catalog's lists and may have no manufacturer. */
-export const D65_KEYS = ['fruits', 'spices', 'sugars', 'consumables'] as const
+/**
+ * D65: the categories whose products take a form and unit from the catalog's
+ * lists. D64 §4.1: Yeast Strains too (Dry or Liquid, `each`); unlike the D65
+ * four, its products need their manufacturer (the lab; `noManufacturerAllowed`).
+ */
+export const D65_KEYS = ['fruits', 'spices', 'sugars', 'consumables', 'yeast'] as const
 export const isD65Key = (key: string | null | undefined) => !!key && (D65_KEYS as readonly string[]).includes(key)
 
-/** What one of a category's items is called on its screens ("Grain", "Hop"). */
-export const itemLabel = (key: string | null | undefined) => (key === 'hops' ? 'Hop' : key === 'grains' ? 'Grain' : 'Ingredient')
+/** D65 decision 8: products a category may have with no manufacturer ("None"); D64 A3: not yeast. */
+export const noManufacturerAllowed = (key: string | null | undefined) => isD65Key(key) && key !== 'yeast'
+
+/** What one of a category's items is called on its screens ("Grain", "Hop", D64 "Strain"). */
+export const itemLabel = (key: string | null | undefined) => (key === 'hops' ? 'Hop' : key === 'grains' ? 'Grain' : key === 'yeast' ? 'Strain' : 'Ingredient')
 
 /** D65 decision 8: a product's manufacturer as screens say it; "None" when there isn't one. */
 export const makerName = (p: { manufacturer?: { name: string } | null } | null | undefined) => p?.manufacturer?.name ?? 'None'
 
 /** D65 §4.3: a product's unit as screens say it ("tablets" for `each` on a Tablet product). */
-export const unitLabel = (p: { unit?: string | null; unit_label?: string | null; form?: string | null } | null | undefined): string =>
-  p?.unit_label ?? (p?.unit === 'each' && p?.form === 'Tablet' ? 'tablets' : (p?.unit ?? 'lb'))
+export const unitLabel = (p: { unit?: string | null; unit_label?: string | null; form?: string | null; category_key?: string | null } | null | undefined): string =>
+  p?.unit_label ??
+  (p?.unit === 'each' && p?.form === 'Tablet'
+    ? 'tablets'
+    : // D64 §4.1: a yeast `each` reads by its form.
+      p?.unit === 'each' && p?.category_key === 'yeast' && (p?.form === 'Dry' || p?.form === 'Liquid')
+      ? p.form === 'Dry'
+        ? 'bricks'
+        : 'pitchables'
+      : (p?.unit ?? 'lb'))
 
 /**
  * D65 §4.2: the units a product of `form` may be in, from its category's
@@ -152,7 +167,7 @@ export function unitsFor(catalog: { units: string[]; form_units?: Record<string,
 }
 
 /** What one of a category's products is called ("Maltster product", "Hop product"). */
-export const productLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster product' : key === 'hops' ? 'Hop product' : 'Product')
+export const productLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster product' : key === 'hops' ? 'Hop product' : key === 'yeast' ? 'Yeast product' : 'Product')
 
 /**
  * D62 §3.4: how a feature lives in a category (or its parent): its
@@ -180,10 +195,17 @@ export function lotTypesFor(types: FeatureType[], categoryId: number | null | un
   })
 }
 
-/** The keys of the features a category's lots must have (hops: alpha acid). */
-export function requiredLotKeys(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): string[] {
+/**
+ * The keys of the features a category's lots must have (hops: alpha acid).
+ * D64 §4.3: with the product's `form`, one for another form only isn't
+ * (pitch size is required on Liquid yeast lots, not Dry).
+ */
+export function requiredLotKeys(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null, form?: string | null): string[] {
   return typesFor(types, categoryId, parentId)
-    .filter((t) => applicability(t, categoryId, parentId)?.lot_required)
+    .filter((t) => {
+      const a = applicability(t, categoryId, parentId)
+      return a?.lot_required && (!a.only_form || form === undefined || a.only_form === form)
+    })
     .map((t) => t.key)
 }
 
@@ -298,8 +320,8 @@ export function manufacturersFor<T extends { id: number }>(
   return parties.filter((p) => ids.has(p.id) || p.id === keep)
 }
 
-/** D62 §3.2: what the manufacturer is called on a category's screens ("Maltster" for grain). */
-export const manufacturerLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster' : 'Manufacturer')
+/** D62 §3.2: what the manufacturer is called on a category's screens ("Maltster" for grain, D64 "Lab" for yeast). */
+export const manufacturerLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster' : key === 'yeast' ? 'Lab' : 'Manufacturer')
 
 /** True for Grains and its children (D61 carry-over 5: they take no custom fields). */
 export function isGrainCategory(categories: IngredientCategory[], id: number): boolean {
@@ -315,14 +337,14 @@ export function isGrainCategory(categories: IngredientCategory[], id: number): b
 export function isManagedCategory(categories: IngredientCategory[], id: number): boolean {
   const category = categories.find((c) => c.id === id)
   if (category?.catalog) return !category.catalog.allows_fields
-  return ['grains', 'hops', 'fruits', 'spices', 'sugars'].includes(categoryKey(categories, category) ?? '')
+  return ['grains', 'hops', 'fruits', 'spices', 'sugars', 'yeast'].includes(categoryKey(categories, category) ?? '')
 }
 
 /** D65 A9: whether a top-level category takes subcategories (Grains, Other Consumables do; Hops, Fruits, Spices, Sugars don't). */
 export function allowsChildren(category: Pick<IngredientCategory, 'key' | 'parent_id' | 'catalog'> | null | undefined): boolean {
   if (!category || category.parent_id != null) return false
   if (category.catalog) return category.catalog.allows_children
-  return !['hops', 'fruits', 'spices', 'sugars'].includes(category.key ?? '')
+  return !['hops', 'fruits', 'spices', 'sugars', 'yeast'].includes(category.key ?? '')
 }
 
 /**
@@ -350,9 +372,12 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
  * Hops", so a phone that cuts the end off still tells one company's lines
  * apart; grain keeps its name ("Rahr 2-Row").
  */
-export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null }): string {
+export function pickerName(
+  p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null; category_key?: string | null },
+): string {
   // D65: a product with no manufacturer already reads "Whirlfloc T · None".
-  if (!p.form || !p.ingredient || !p.manufacturer) return p.display_name
+  // D64: a yeast product already leads with its strain and code ("Chico Ale US-05 · Fermentis").
+  if (!p.form || !p.ingredient || !p.manufacturer || p.category_key === 'yeast') return p.display_name
   return `${p.ingredient.name} ${p.form}${p.name ? ` (${p.name})` : ''} · ${p.manufacturer.name}`
 }
 

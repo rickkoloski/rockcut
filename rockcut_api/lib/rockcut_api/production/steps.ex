@@ -608,7 +608,11 @@ defmodule RockcutApi.Production.Steps do
   ## Checking off
 
   @doc "What a check-off takes, on the schedule and the Brewery board (D56 adds the result)."
-  def complete_fields, do: ~w(done_on batch_number answer result fail_action retest_days)
+  def complete_fields,
+    do:
+      ~w(done_on batch_number answer result fail_action retest_days) ++
+        ~w(yeast_outcome yeast_brink_id yeast_lb yeast_product_ids yeast_generation) ++
+        ~w(yeast_brink_answer yeast_record_id yeast_lock_version yeast_dirty_ok yeast_note)
 
   @doc """
   Check off `step` (§3.7) as `actor`: `done_on` (default today; not in the
@@ -628,11 +632,26 @@ defmodule RockcutApi.Production.Steps do
   the step's, 1–30) is added on `done_on` + N and the move is worked out
   for the shift to it from the step's planned day (one prompt).
 
+  D64 §5 (Stop 3): a Yeast harvest step (`yeast_harvest`) needs
+  `yeast_outcome` (`:yeast_required`): `dumped` keeps only `yeast_note` on
+  the step; `harvested` also records the harvest in this transaction
+  (`Yeast.Harvests.harvest/2`: `yeast_brink_id`, `yeast_lb`,
+  `yeast_product_ids` and `yeast_generation`, which default to what was
+  pitched into the batch, `Yeast.Generations.for_batch/1`; `done_on` is its
+  date; `yeast_dirty_ok` and `yeast_brink_answer` (with `yeast_record_id`
+  and `yeast_lock_version`, what was asked about) answer its questions, a
+  `{:yeast_question, kind, brink}` otherwise). The person (on a device, the
+  acting staff-code person) must be able to edit ingredients: else
+  `:forbidden`, or on a device `:staff_code_not_allowed` ("can't do this
+  here", not counted against the code).
+
   `preview: true` returns `{:ok, {:preview, %{move, done_on,
   needs_batch_number, next_batch_number, needs_result, retest_days,
-  retest_on}}}` (`move` nil when nothing else moves; `retest_on` set for a
-  Fail with a retest). Otherwise `{:ok, %{batch_ids, renumbered,
-  out_of_order, retest_id}}`.
+  retest_on, needs_yeast, yeast}}}` (`move` nil when nothing else moves;
+  `retest_on` set for a Fail with a retest; `yeast` the Harvest dialog's
+  brinks, default brink, defaults and strain products for a Yeast harvest
+  step). Otherwise `{:ok, %{batch_ids, renumbered, out_of_order,
+  retest_id}}`.
   """
   def complete(id, attrs, %User{} = actor, opts \\ []) do
     attrs = stringify(attrs)
@@ -651,6 +670,7 @@ defmodule RockcutApi.Production.Steps do
       answer = answer!(attrs["answer"])
       batch = step.batch_id && Repo.get!(Batch, step.batch_id)
       outcome = outcome!(step, attrs, opts[:preview])
+      yeast = yeast!(step, attrs, actor, opts[:preview])
 
       check_off_order!(graph, step, batch)
 
@@ -676,7 +696,9 @@ defmodule RockcutApi.Production.Steps do
            needs_result: has_result?(step),
            retest_days: if(has_result?(step), do: step.retest_days),
            retest_allowed: retest_allowed?(step),
-           retest_on: retest_on
+           retest_on: retest_on,
+           needs_yeast: yeast != nil,
+           yeast: yeast && yeast_preview(step)
          }}
       else
         number =
@@ -707,7 +729,9 @@ defmodule RockcutApi.Production.Steps do
               done_on_device_id: actor.on_device_id,
               completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
               checkoff_move: checkoff_move(graph, step, due_on, changes, retest_on && plan),
-              result: outcome.result
+              result: outcome.result,
+              yeast_outcome: yeast && yeast.outcome,
+              yeast_note: yeast && yeast.note
             )
             |> Repo.update!()
 
@@ -731,6 +755,7 @@ defmodule RockcutApi.Production.Steps do
           end)
 
         retest = retest_on && add_retest!(step, retest_on)
+        if yeast, do: record_yeast!(step, yeast, attrs, done_on, actor)
 
         %{
           batch_ids: batch_ids([step.id | Map.keys(changes)], graph),
@@ -788,9 +813,13 @@ defmodule RockcutApi.Production.Steps do
   it put them and not done; otherwise it keeps its date.
   D56 decision 8: a failed test's retest goes (its links back on the test),
   unless it's done (`:retest_done`); the result is cleared.
+  D64 §5.4: a Yeast harvest step's harvest comes out first
+  (`Yeast.Harvests.unrecord_step/2`, as `actor`), refused once the brink
+  was pitched from or counted since (`{:yeast_locked, brink}`); its outcome
+  and note are cleared.
   `{:ok, %{batch_ids, renumbered, message}}`.
   """
-  def uncomplete(id) do
+  def uncomplete(id, actor \\ nil) do
     Repo.transaction(fn ->
       graph = graph!([to_int(id) || Repo.rollback(:not_found)])
       step = graph.steps[to_int(id)]
@@ -801,6 +830,7 @@ defmodule RockcutApi.Production.Steps do
 
       uncheck_order!(graph, step, batch)
       after_brew_done!(graph, step)
+      unrecord_yeast!(step, actor)
 
       {message, renumbered} =
         Batches.with_renumbering(fn ->
@@ -816,7 +846,9 @@ defmodule RockcutApi.Production.Steps do
             completed_at: nil,
             checkoff_move: nil,
             due_on: due_on,
-            result: nil
+            result: nil,
+            yeast_outcome: nil,
+            yeast_note: nil
           )
           |> Repo.update!()
 
@@ -864,6 +896,98 @@ defmodule RockcutApi.Production.Steps do
   end
 
   defp late_pre_brew?(_graph, _step, _done_on), do: false
+
+  ## The Yeast harvest step (D64 §5)
+
+  @yeast_outcomes ~w(harvested dumped)
+
+  @doc "Whether `step` is a Yeast harvest step (D64: the `yeast_harvest` behavior)."
+  def yeast_harvest?(%Step{} = step), do: behavior(step) == "yeast_harvest"
+
+  # Nil for any other step. A Yeast harvest step: the person must be able to
+  # edit ingredients (on a device, the staff-code person: "can't do this
+  # here", not counted), and outside a preview it needs the outcome.
+  defp yeast!(%Step{} = step, attrs, %User{} = actor, preview?) do
+    if yeast_harvest?(step) do
+      unless Authz.can?(actor, :write, :ingredients),
+        do: Repo.rollback(if(actor.on_device_id, do: :staff_code_not_allowed, else: :forbidden))
+
+      outcome =
+        case attrs["yeast_outcome"] do
+          v when v in @yeast_outcomes -> v
+          v when v in [nil, ""] -> unless preview?, do: Repo.rollback(:yeast_required)
+          _ -> Repo.rollback(:yeast_outcome_invalid)
+        end
+
+      %{outcome: outcome, note: yeast_note(attrs["yeast_note"])}
+    end
+  end
+
+  defp yeast_note(v) when is_binary(v) do
+    case String.trim(v) do
+      "" -> nil
+      t -> String.slice(t, 0, 2_000)
+    end
+  end
+
+  defp yeast_note(_), do: nil
+
+  # The Harvest dialog's data: the active brinks with their state, the
+  # default brink (where this batch's earlier pull went, while it's still
+  # there), the strains and generation from the batch's pitches, else its
+  # earlier pull (nil: the dialog asks, A5) and the yeast products for the strain picker. The
+  # device gets them here, not from the yeast routes (spec §8).
+  defp yeast_preview(%Step{batch_id: batch_id}) do
+    %{
+      brinks: RockcutApi.Yeast.Brinks.list(),
+      default_brink_id: RockcutApi.Yeast.Harvests.default_brink_id(batch_id),
+      defaults: RockcutApi.Yeast.Generations.defaults(batch_id),
+      products: RockcutApi.Yeast.Harvests.yeast_products()
+    }
+  end
+
+  defp record_yeast!(_step, %{outcome: "dumped"}, _attrs, _done_on, _actor), do: :ok
+
+  defp record_yeast!(%Step{} = step, %{outcome: "harvested", note: note}, attrs, done_on, actor) do
+    defaults = RockcutApi.Yeast.Generations.defaults(step.batch_id)
+
+    %{
+      "brink_id" => attrs["yeast_brink_id"],
+      "lb" => attrs["yeast_lb"],
+      "occurred_on" => Date.to_iso8601(done_on),
+      "batch_id" => step.batch_id,
+      # An empty list is an answer (422 "Pick the strain"); only a missing one takes the default.
+      "product_ids" =>
+        if(attrs["yeast_product_ids"] == nil,
+          do: defaults && defaults.product_ids,
+          else: attrs["yeast_product_ids"]
+        ),
+      "generation" => blank(attrs["yeast_generation"]) || (defaults && defaults.generation),
+      "note" => note,
+      "production_step_id" => step.id,
+      "dirty_ok" => attrs["yeast_dirty_ok"],
+      "brink_answer" => attrs["yeast_brink_answer"],
+      "record_id" => attrs["yeast_record_id"],
+      "lock_version" => attrs["yeast_lock_version"]
+    }
+    |> RockcutApi.Yeast.Harvests.harvest(actor)
+    |> case do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp blank(v) when v in [nil, "", []], do: nil
+  defp blank(v), do: v
+
+  defp unrecord_yeast!(%Step{} = step, actor) do
+    if yeast_harvest?(step) do
+      case RockcutApi.Yeast.Harvests.unrecord_step(step.id, actor) do
+        :ok -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+  end
 
   ## Test results (D56 §3.2)
 

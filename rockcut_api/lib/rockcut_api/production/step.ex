@@ -41,6 +41,10 @@ defmodule RockcutApi.Production.Step do
     # D56 decision 22: planned before brew day (a template step at a
     # negative day, or added before brew day), whatever its date is now.
     field :pre_brew, :boolean, default: false
+    # D64 §4.8: a Yeast harvest step's check-off, `harvested` (its entry is
+    # the `yeast_harvest_entries` row with this step) or `dumped`, and the note.
+    field :yeast_outcome, :string
+    field :yeast_note, :string
 
     belongs_to :batch, RockcutApi.Brewing.Batch
     belongs_to :tank, RockcutApi.Production.Tank

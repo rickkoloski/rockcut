@@ -56,9 +56,8 @@ describe('the catalog lists (§4.2)', () => {
     expect(unitsFor(undefined, 'Dry')).toEqual([])
   })
 
-  it('every key but yeast and future is managed', () => {
-    for (const key of ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables']) expect(isManagedKey(key)).toBe(true)
-    expect(isManagedKey('yeast')).toBe(false)
+  it('every key but future is managed (D64: yeast too)', () => {
+    for (const key of ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables', 'yeast']) expect(isManagedKey(key)).toBe(true)
     expect(isManagedKey('future')).toBe(false)
   })
 
@@ -66,8 +65,9 @@ describe('the catalog lists (§4.2)', () => {
     const cat = (id: number, key: string | null, parent: number | null = null) =>
       ({ id, name: key ?? 'child', key, parent_id: parent, sort_order: 0, field_definitions: null, inserted_at: '', updated_at: '' }) as IngredientCategory
     const categories = [cat(1, 'fruits'), cat(2, 'consumables'), cat(3, null, 2), cat(4, 'hops'), cat(5, 'grains'), cat(6, 'yeast')]
-    expect(categories.map((c) => allowsChildren(c))).toEqual([false, true, false, false, true, true])
-    expect(categories.map((c) => isManagedCategory(categories, c.id))).toEqual([true, false, false, true, true, false])
+    // D64 §4.1: Yeast Strains takes neither any more.
+    expect(categories.map((c) => allowsChildren(c))).toEqual([false, true, false, false, true, false])
+    expect(categories.map((c) => isManagedCategory(categories, c.id))).toEqual([true, false, false, true, true, true])
     // The API's catalog wins when it's there.
     expect(allowsChildren({ ...cat(7, 'spices'), catalog: { allows_children: true } as IngredientCategory['catalog'] })).toBe(true)
   })

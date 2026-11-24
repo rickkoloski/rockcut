@@ -79,7 +79,7 @@ export default defineConfig({
     {
       name: 'd58',
       testMatch: /regression\/d58\/.*\.spec\.ts/,
-      dependencies: ['setup', 'brewery-board'],
+      dependencies: ['setup', 'ingredients'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },
@@ -96,10 +96,13 @@ export default defineConfig({
     // D60: the sacks/lb toggle is per account on the server, and the specs
     // set the same personas' (brewer1, brewer2, breweryMgr), so they run one
     // at a time (beside `chromium`; their products and lots are their own).
+    // D64: they also brew batches and make board tasks, so they run after the
+    // schedule and board specs, whose seed checks would see them, and before
+    // d58, whose load flakes (5911) would skip them (`--no-deps` to run alone).
     {
       name: 'ingredients',
       testMatch: /regression\/ingredients\/.*\.spec\.ts/,
-      dependencies: ['setup'],
+      dependencies: ['setup', 'brewery-board'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },

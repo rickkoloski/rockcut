@@ -204,7 +204,7 @@ function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot
   const d65 = isD65Key(product?.category_key)
   const featureTypes = hops || d65 ? lotTypesFor(types, product?.category?.id, product?.category?.parent_id, product?.form) : typesFor(types, product?.category?.id, product?.category?.parent_id)
   const basis = lotFeatureBasis(product?.features, featureTypes, product?.category?.id, product?.category?.parent_id)
-  const required = requiredLotKeys(types, product?.category?.id, product?.category?.parent_id)
+  const required = requiredLotKeys(types, product?.category?.id, product?.category?.parent_id, product?.form ?? null)
   const choices = receivableLots(lots ?? [], line.offer.pack_size)
   const previous = previousLot(lots ?? [], line.offer.pack_size)
   const received = parsePacks(state.received, 0)
@@ -387,7 +387,7 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                     </>
                   ) : view.d65 ? (
                     featureTypes.length > 0 && (
-                      <FeatureFields types={featureTypes} drafts={draftsOf(r)} onChange={(d) => setRow(r.key, { drafts: d })} standard={view.basis.standard} typical={view.basis.typical} />
+                      <FeatureFields types={featureTypes} drafts={draftsOf(r)} onChange={(d) => setRow(r.key, { drafts: d })} standard={view.basis.standard} typical={view.basis.typical} required={view.required} />
                     )
                   ) : (
                   <Box>

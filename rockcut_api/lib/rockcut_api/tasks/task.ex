@@ -44,6 +44,10 @@ defmodule RockcutApi.Tasks.Task do
     # D49 §3.12: a task made from a production step (`Production.TaskLink`
     # keeps it in step; never cast).
     belongs_to :production_step, RockcutApi.Production.Step
+    # D64 §7: a brink's "Count YB2" (`recount`) or "Clean YB2" (`clean`) task;
+    # only `Yeast.BoardTasks` writes these (never cast).
+    belongs_to :yeast_brink, RockcutApi.Yeast.Brink
+    field :yeast_kind, :string
     # D49: what the board's prompts name, set by `Production.TaskLink.describe/1`.
     field :step_name, :string, virtual: true
     field :batch_label, :string, virtual: true

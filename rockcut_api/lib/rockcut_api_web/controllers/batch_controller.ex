@@ -2,6 +2,8 @@ defmodule RockcutApiWeb.BatchController do
   use RockcutApiWeb, :controller
 
   alias RockcutApi.Brewing
+  alias RockcutApi.Production.Batches
+  alias RockcutApiWeb.ProductionErrors
   import RockcutApiWeb.JSONHelpers, only: [batch: 1]
 
   action_fallback RockcutApiWeb.FallbackController
@@ -21,7 +23,9 @@ defmodule RockcutApiWeb.BatchController do
 
   def show(conn, %{"id" => id}) do
     b = Brewing.get_batch!(id)
-    json(conn, %{data: batch(b)})
+    # D64 gap 22: "#44.1" or "P3" for a batch with no number of its own ("" when unscheduled).
+    label = Batches.number_label(b, Batches.p_numbers())
+    json(conn, %{data: Map.put(batch(b), :label, label)})
   end
 
   def update(conn, %{"id" => id} = params) do
@@ -35,8 +39,16 @@ defmodule RockcutApiWeb.BatchController do
   def delete(conn, %{"id" => id}) do
     b = Brewing.get_batch!(id)
 
-    with {:ok, _} <- Brewing.delete_batch(b) do
-      send_resp(conn, :no_content, "")
+    case Brewing.delete_batch(b) do
+      {:ok, _} ->
+        send_resp(conn, :no_content, "")
+
+      # Production's sentence, in the shape the batch page shows.
+      {:error, code} when code in [:split_part, :split] ->
+        {:error, {:invalid, %{base: [ProductionErrors.message(code)]}}}
+
+      error ->
+        error
     end
   end
 end

@@ -88,7 +88,9 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
                "batch_label" => "Galactic P1",
                "result" => nil,
                "retest_on" => nil,
-               "retest_done" => false
+               "retest_done" => false,
+               # D64: a Yeast harvest step's check-off.
+               "yeast_outcome" => nil
              }
 
       assert Enum.find(cards, &(&1["id"] == own.id))["production"] == nil

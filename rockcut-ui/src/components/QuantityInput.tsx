@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import DecimalInput from './DecimalInput'
-import { LB_DECIMALS, isCountUnit, minQuantity, packLabel, packSizeText, quantityToPacks, readQuantity, unitDecimals, type QuantityDisplay } from '../lib/brewingUnits'
+import { LB_DECIMALS, isCountUnit, minQuantity, packLabel, packPlural, packSizeText, quantityToPacks, readQuantity, unitDecimals, type QuantityDisplay } from '../lib/brewingUnits'
 
 /** The quantity typed so far, in the product's unit as a decimal string, or null when empty or refused. */
 export interface QuantityValue {
@@ -41,7 +41,8 @@ const text = (n: number | null | undefined) => (n == null ? '' : String(n))
  * A count (`each`, "tablets") that isn't whole is refused under the box, never rounded (D65 lead decisions 1, gap 5).
  */
 export default function QuantityInput({ mode, packSize, packName = 'sack', unit = 'lb', productName, positive, label, onChange, initial, helperText, required, disabled, testId }: QuantityInputProps) {
-  const packs = mode === 'packs' && packSize != null && packSize > 0
+  // D64: a pack of one that is the unit itself (a brick of 1 brick) is one box: packs would say the same twice.
+  const packs = mode === 'packs' && packSize != null && packSize > 0 && !(packSize === 1 && packPlural(packName) === unit)
   const start = initial != null && packs ? quantityToPacks(initial, packSize, unit) : null
   const [packText, setPackText] = useState(start ? text(start.packs || null) : '')
   const [lbText, setLbText] = useState(start ? text(start.loose || null) : text(initial))

@@ -25,6 +25,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import BatchFormDialog from './BatchFormDialog';
 import BrewTurnDialog from './BrewTurnDialog';
 import BatchLogEntryDialog from './BatchLogEntryDialog';
+import BatchYeastSection from './BatchYeastSection';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
 import parseApiError from '../../lib/parseApiError';
@@ -90,6 +91,8 @@ export default function BatchDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // D64 Stop 4: a refused delete (yeast pitched into the batch or harvested from it) says why.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [turnDialogOpen, setTurnDialogOpen] = useState(false);
   const [selectedTurn, setSelectedTurn] = useState<BrewTurn | undefined>();
   const [logDialogOpen, setLogDialogOpen] = useState(false);
@@ -108,9 +111,16 @@ export default function BatchDetail() {
     return <CircularProgress />;
   }
 
+  // Gap 22: a part or a planned batch has no number of its own.
+  const name = batch.batch_number || batch.label || batch.brand?.name || 'Batch';
+
   const handleDelete = async () => {
-    await deleteMutation.mutateAsync(batch.id);
-    navigate('/batches');
+    try {
+      await deleteMutation.mutateAsync(batch.id);
+      navigate('/batches');
+    } catch (err) {
+      setDeleteError(parseApiError(err));
+    }
   };
 
   return (
@@ -119,13 +129,13 @@ export default function BatchDetail() {
         breadcrumbs={[
           { label: 'Home', to: '/' },
           { label: 'Batches', to: '/batches' },
-          { label: batch.batch_number },
+          { label: name },
         ]}
-        title={batch.batch_number}
+        title={name}
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Batch"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Batch"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Batch"><IconButton onClick={() => { setDeleteError(null); setDeleteOpen(true); }} color="error" data-testid="batch-page-delete"><DeleteIcon /></IconButton></Tooltip>
           </Box>
         }
       />
@@ -166,6 +176,9 @@ export default function BatchDetail() {
         </Grid>
 
       </Paper>
+
+      {/* D64 §6.6: what was pitched into the batch and harvested from it. */}
+      <BatchYeastSection batchId={batch.id} />
 
       {/* Brew Turns */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -227,9 +240,16 @@ export default function BatchDetail() {
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Batch"
-        message={`Are you sure you want to delete batch "${batch.batch_number}"? This cannot be undone.`}
+        message={`Are you sure you want to delete batch "${batch.label || name}"? This cannot be undone.`}
         loading={deleteMutation.isPending}
-      />
+        testId="batch-page-delete-confirm"
+      >
+        {deleteError && (
+          <Alert severity="error" sx={{ mt: 1 }} data-testid="batch-page-delete-error">
+            {deleteError}
+          </Alert>
+        )}
+      </ConfirmDialog>
 
       <BrewTurnDialog
         open={turnDialogOpen}

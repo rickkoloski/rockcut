@@ -25,6 +25,8 @@ export interface ApiProduct {
   id: number
   ingredient_id: number
   display_name: string
+  /** The product's own name (a yeast's code, "Whirlfloc T"'s "T"); null for most grain. */
+  name?: string | null
   ingredient: { id: number; name: string } | null
   on_hand: string
   expired: string

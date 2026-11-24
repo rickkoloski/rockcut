@@ -31,6 +31,9 @@ export interface GrainFilters {
   manufacturerId: number | ''
   supplierId: number | ''
   onHandOnly: boolean
+  /** D64 §6.1: Yeast Strains' form (Dry, Liquid) and Strain Type filters; '' is all. */
+  form?: string
+  strainTypeId?: number | ''
 }
 
 /** D65: the manufacturer filter's "None" (products with no manufacturer). */
@@ -47,6 +50,8 @@ interface GrainsListProps {
   types: FeatureType[]
   filters: GrainFilters
   mode: QuantityDisplay
+  /** D64: Strain Type names by id (the Yeast Strains view's Type column). */
+  strainTypes?: Map<number, string>
 }
 
 const SPEC_COLUMNS: Record<string, readonly string[]> = {
@@ -55,9 +60,11 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   // D65 §5.1: fruit's typical Brix range; sugars' extract.
   fruits: ['brix'],
   sugars: ['extract_fgdb'],
+  // D64 §6.1: yeast's temp and attenuation ranges.
+  yeast: ['ferm_temp_f', 'attenuation_pct'],
 }
 /** Columns that are a typical range on the product (low–high). */
-const RANGE_COLUMNS = new Set(['alpha_acid_pct', 'beta_acid_pct', 'total_oil_ml_100g', 'brix'])
+const RANGE_COLUMNS = new Set(['alpha_acid_pct', 'beta_acid_pct', 'total_oil_ml_100g', 'brix', 'ferm_temp_f', 'attenuation_pct'])
 const SHORT_LABELS: Record<string, string> = {
   color_lovibond: 'Color °L',
   extract_fgdb: 'Extract % FGDB',
@@ -68,6 +75,8 @@ const SHORT_LABELS: Record<string, string> = {
   beta_acid_pct: 'Beta %',
   total_oil_ml_100g: 'Oil mL/100 g',
   brix: 'Brix °Bx',
+  ferm_temp_f: 'Temp °F',
+  attenuation_pct: 'Atten. %',
 }
 
 const money = (v: string) => `$${Number(v).toFixed(2)}`
@@ -83,34 +92,42 @@ const money = (v: string) => `$${Number(v).toFixed(2)}`
  * manufacturer (None when blank), form, unit, on hand and suppliers with
  * $/pack.
  */
-export default function GrainsList({ categoryKey = 'grains', children, products, grains, types, filters, mode }: GrainsListProps) {
+export default function GrainsList({ categoryKey = 'grains', children, products, grains, types, filters, mode, strainTypes }: GrainsListProps) {
   const navigate = useNavigate()
   const hops = categoryKey === 'hops'
   const grain = categoryKey === 'grains'
   // D65: any other managed category.
   const d65 = !hops && !grain
+  // D64 §6.1: Yeast Strains: strain, lab, code, form, type, temp, attenuation.
+  const yeast = categoryKey === 'yeast'
+  const typeName = (id: number | null | undefined) => (id != null ? (strainTypes?.get(id) ?? '—') : '—')
   const specColumns = SPEC_COLUMNS[categoryKey] ?? []
   // Test ids and words by the category: grain-row-12, hop-row-12, product-row-12.
   const item = hops ? 'hop' : grain ? 'grain' : 'product'
-  const extraColumns = hops || d65 ? 2 : 0
+  const extraColumns = yeast ? 3 : hops || d65 ? 2 : 0
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const decimals = useMemo(() => Object.fromEntries(types.map((t) => [t.key, t.decimals])), [types])
 
   const groups = useMemo(() => {
-    const filtering = !!filters.search.trim() || filters.manufacturerId !== '' || filters.supplierId !== '' || filters.onHandOnly
+    const narrowed = !!filters.form || (filters.strainTypeId ?? '') !== ''
+    const filtering = !!filters.search.trim() || filters.manufacturerId !== '' || filters.supplierId !== '' || filters.onHandOnly || narrowed
     const shownProducts = products.filter(
       (p) =>
         productMatches(p, filters.search) &&
         (filters.manufacturerId === '' || (p.manufacturer_party_id ?? NONE) === filters.manufacturerId) &&
         (filters.supplierId === '' || (p.offers ?? []).some((o) => o.supplier_party_id === filters.supplierId)) &&
-        (!filters.onHandOnly || Number(p.on_hand) > 0),
+        (!filters.onHandOnly || Number(p.on_hand) > 0) &&
+        (!filters.form || p.form === filters.form) &&
+        ((filters.strainTypeId ?? '') === '' || p.ingredient?.yeast_strain_type_id === filters.strainTypeId),
     )
     const withProducts = new Set(products.map((p) => p.ingredient_id))
     // A grain with no products shows only while nothing narrows the list but the search.
     const term = filters.search.trim().toLowerCase()
     const bare = grains.filter(
-      (g) => !withProducts.has(g.id) && (!filtering || (term && filters.manufacturerId === '' && filters.supplierId === '' && !filters.onHandOnly && g.name.toLowerCase().includes(term))),
+      (g) =>
+        !withProducts.has(g.id) &&
+        (!filtering || (term && !narrowed && filters.manufacturerId === '' && filters.supplierId === '' && !filters.onHandOnly && g.name.toLowerCase().includes(term))),
     )
     return children
       .filter((c) => filters.categoryId == null || c.id === filters.categoryId)
@@ -194,6 +211,15 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
                           <Typography variant="caption" color="text.secondary">
                             {hops
                               ? hopCaption(r.product, decimals)
+                              : yeast
+                                ? [
+                                    r.product.form,
+                                    typeName(r.product.ingredient?.yeast_strain_type_id),
+                                    spec(r.product, 'ferm_temp_f') !== '—' && `${spec(r.product, 'ferm_temp_f')} °F`,
+                                    spec(r.product, 'attenuation_pct') !== '—' && `${spec(r.product, 'attenuation_pct')} % atten.`,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')
                               : d65
                                 ? [
                                     r.product.form,
@@ -236,11 +262,13 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
       <Table size="small" data-testid={hops ? 'hops-table' : grain ? 'grains-table' : 'products-table'}>
         <TableHead>
           <TableRow>
-            <TableCell>{hops ? 'Variety' : grain ? 'Grain' : 'Ingredient'}</TableCell>
-            <TableCell>{grain ? 'Maltster' : 'Manufacturer'}</TableCell>
+            <TableCell>{hops ? 'Variety' : grain ? 'Grain' : yeast ? 'Strain' : 'Ingredient'}</TableCell>
+            <TableCell>{grain ? 'Maltster' : yeast ? 'Lab' : 'Manufacturer'}</TableCell>
+            {yeast && <TableCell>Code</TableCell>}
             {(hops || d65) && <TableCell>Form</TableCell>}
             {hops && <TableCell>Origin</TableCell>}
-            {d65 && <TableCell>Unit</TableCell>}
+            {d65 && !yeast && <TableCell>Unit</TableCell>}
+            {yeast && <TableCell>Type</TableCell>}
             {specColumns.map((k) => (
               <TableCell key={k} align="right">
                 {SHORT_LABELS[k]}
@@ -267,15 +295,17 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
                       <TableCell>{r.product.ingredient?.name}</TableCell>
                       <TableCell>
                         {grain ? r.product.manufacturer?.name : makerName(r.product)}
-                        {r.product.name && (
+                        {r.product.name && !yeast && (
                           <Typography variant="caption" color="text.secondary" component="div">
                             {r.product.name}
                           </Typography>
                         )}
                       </TableCell>
+                      {yeast && <TableCell data-testid={`${item}-code-${r.product.id}`}>{r.product.name}</TableCell>}
                       {(hops || d65) && <TableCell>{r.product.form}</TableCell>}
                       {hops && <TableCell>{r.product.origin ?? '—'}</TableCell>}
-                      {d65 && <TableCell data-testid={`${item}-unit-${r.product.id}`}>{unitLabel(r.product)}</TableCell>}
+                      {d65 && !yeast && <TableCell data-testid={`${item}-unit-${r.product.id}`}>{unitLabel(r.product)}</TableCell>}
+                      {yeast && <TableCell data-testid={`${item}-type-${r.product.id}`}>{typeName(r.product.ingredient?.yeast_strain_type_id)}</TableCell>}
                       {specColumns.map((k) => (
                         <TableCell key={k} align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`${item}-${k}-${r.product.id}`}>
                           {spec(r.product, k)}

@@ -9,9 +9,9 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, packLabel, packPlural, packSizeText, parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, packPlural, packSizeText, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
-import { emptyOrderPack, offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { emptyOrderPack, offerPackText, orderLineWords, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
 import { WRAP_ITEM, WRAP_SELECT, pickerName, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
@@ -115,6 +115,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       // Sent as the typed decimal string, not a float.
       priceText: price.ok ? price.value : null,
       priceOk: price.ok && price.value != null,
+      // Gap 9 (D65 DEV QA, D64 §9): "Packs" / "$ / pack" before an offer is picked, "Sacks" for a sacks-only supplier.
+      words: orderLineWords(offer?.pack_name, choices.map((o) => o.pack_name)),
     }
   })
   // Gap 7 (lead decisions 4): before any line has an offer, the supplier's words ("packs" unless all its offers are sacks).
@@ -214,7 +216,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       <FormControlLabel control={<Switch checked={offContract} onChange={(e) => setOffContract(e.target.checked)} data-testid="order-off-contract" />} label="Off-contract (doesn't count against a contract)" />
 
       <Typography variant="subtitle2">Lines</Typography>
-      {read.map(({ line: l, offer, packs }, i) => (
+      {read.map(({ line: l, offer, packs, words }, i) => (
         <Paper key={l.key} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }} data-testid={`order-line-${i}`}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <FormControl fullWidth size="small" disabled={supplierId === ''}>
@@ -238,14 +240,14 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
           </Box>
           <Box sx={{ display: 'flex', gap: 1.5 }}>
             <TextField
-              label={packLabel(offer?.pack_name ?? 'sack')}
+              label={words.label}
               size="small"
               value={l.packs}
               onChange={(e) => setLine(l.key, { packs: e.target.value })}
               error={l.packs.trim() !== '' && packs == null}
               helperText={
                 l.packs.trim() !== '' && packs == null
-                  ? wholePacks(offer?.pack_name ?? 'sack')
+                  ? wholePacks(words.pack)
                   : offer
                     ? `${packSizeText(offer.pack_name, offer.pack_size, productUnit.get(offer.product_id))}${offer.pack_note ? ` (${offer.pack_note})` : ''}`
                     : undefined
@@ -255,7 +257,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
             />
             <DecimalInput
               decimals={PRICE_DECIMALS}
-              label={`$ / ${offer?.pack_name ?? 'sack'}`}
+              label={words.priceLabel}
               size="small"
               value={l.price}
               onChange={(t) => setLine(l.key, { price: t })}

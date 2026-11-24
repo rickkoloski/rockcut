@@ -16,8 +16,10 @@ import {
   draftsValid,
   featuresPayload,
   grainCategories,
+  applicability,
   isD65Key,
   isRangeType,
+  noManufacturerAllowed,
   itemLabel,
   keyedCategories,
   manufacturerLabel,
@@ -74,6 +76,10 @@ SearchHeader.muiSkipListHighlight = true
 /** The manufacturer picker's "Other manufacturer…" entry. */
 const OTHER = -1
 
+/** The drafts of the boxes shown (`types`), so a box hidden by a form change isn't sent. */
+const onlyShown = (drafts: FeatureDrafts, types: FeatureType[]): FeatureDrafts =>
+  Object.fromEntries(Object.entries(drafts).filter(([k]) => types.some((t) => t.key === k)))
+
 interface ProductDialogProps {
   open: boolean
   onClose: () => void
@@ -105,6 +111,10 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
   const hops = given === 'hops'
   const d65 = isD65Key(given)
   const key = hops || d65 ? given : 'grains'
+  // D64 §4.1 (A1, A3): a yeast product needs its lab and its code (the product name).
+  const yeast = key === 'yeast'
+  // D65 decision 8: "None" (no manufacturer) on the four D65 categories, never on yeast.
+  const noneOk = noManufacturerAllowed(key)
   const navigate = useNavigate()
   const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const { data: ingredients = [], isLoading: ingredientsLoading } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
@@ -157,7 +167,14 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
   const shownUnit = units.length === 1 ? units[0] : unit
   // D65 §4.4: the ingredient's category's product features: a standard (sugars' extract) or a range (fruit's Brix).
   const ingredientCategory = categories.find((c) => c.id === ingredients.find((i) => i.id === grainId)?.category_id)
-  const d65Types = d65 && ingredientCategory ? productTypesFor(types, ingredientCategory.id, ingredientCategory.parent_id) : []
+  // D64 §4.3: a feature for one form only (pitch size, Liquid yeast) shows on that form's products.
+  const d65Types =
+    d65 && ingredientCategory
+      ? productTypesFor(types, ingredientCategory.id, ingredientCategory.parent_id).filter((t) => {
+          const only = applicability(t, ingredientCategory.id, ingredientCategory.parent_id)?.only_form
+          return !only || only === form
+        })
+      : []
   const d65Range = (t: FeatureType) => isRangeType(t, ingredientCategory?.id, ingredientCategory?.parent_id)
   const featureTypes = hops ? [] : d65 ? d65Types.filter((t) => !d65Range(t)) : grains ? typesFor(types, grains.id) : []
   const rangeTypes = hops && hopsCategory ? productTypesFor(types, hopsCategory.id) : d65 ? d65Types.filter(d65Range) : []
@@ -195,7 +212,9 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
 
   const submit = async () => {
     if (d65) {
-      if (!grainId) return setError('Pick the ingredient')
+      if (!grainId) return setError(yeast ? 'Pick the strain' : 'Pick the ingredient')
+      if (yeast && !manufacturerId) return setError('Pick the lab')
+      if (yeast && !name.trim()) return setError("Enter the lab's code (the strain ID, e.g. US-05)")
       if (!form) return setError('Pick the form')
       if (!shownUnit || !units.includes(shownUnit)) return setError('Pick the unit')
     } else if (!grainId || !manufacturerId) return setError(`Pick the ${itemLabel(key).toLowerCase()} and the ${manufacturerLabel(key).toLowerCase()}`)
@@ -210,7 +229,12 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
       ...(hops
         ? { form, origin: origin.trim() || null, features: rangesPayload(shownRanges, product?.features) }
         : d65
-          ? { form, unit: shownUnit, features: { ...featuresPayload(shown, product?.features), ...rangesPayload(shownRanges, product?.features) } }
+          ? {
+              form,
+              unit: shownUnit,
+              // Only the boxes this form shows (a pitch size typed on Liquid isn't sent once it's Dry).
+              features: { ...featuresPayload(onlyShown(shown, featureTypes), product?.features), ...rangesPayload(shownRanges, product?.features) },
+            }
           : { features: featuresPayload(shown, product?.features) }),
     }
     try {
@@ -272,18 +296,18 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
           ])}
         </Select>
       </FormControl>
-      <FormControl fullWidth required={!d65}>
+      <FormControl fullWidth required={!noneOk}>
         {/* D65: None shows as a value, so the label sits above it. */}
-        <InputLabel id="product-maltster-label" shrink={d65 || undefined}>
+        <InputLabel id="product-maltster-label" shrink={noneOk || undefined}>
           {manufacturerLabel(key)}
         </InputLabel>
         <Select
           labelId="product-maltster-label"
           id="product-maltster"
           label={manufacturerLabel(key)}
-          value={manufacturers.length || d65 ? manufacturerId : ''}
-          displayEmpty={d65}
-          notched={d65 || undefined}
+          value={manufacturers.length || noneOk ? manufacturerId : ''}
+          displayEmpty={noneOk}
+          notched={noneOk || undefined}
           open={manufacturerOpen}
           onOpen={() => setManufacturerOpen(true)}
           onClose={() => {
@@ -310,7 +334,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
         >
           {showAll && <SearchHeader inputRef={searchRef} value={manufacturerSearch} onChange={setManufacturerSearch} />}
           {/* D65 decision 8: no manufacturer, shown as None. */}
-          {d65 && (
+          {noneOk && (
             <MenuItem value="" data-testid="product-maltster-none">
               None
             </MenuItem>
@@ -328,7 +352,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
           {!showAll && (
             <MenuItem value={OTHER} data-testid="product-maltster-other">
               {/* Gap 14: grain screens say maltster. */}
-              <em>{key === 'grains' ? 'Other maltster…' : 'Other manufacturer…'}</em>
+              <em>{key === 'grains' ? 'Other maltster…' : yeast ? 'Other lab…' : 'Other manufacturer…'}</em>
             </MenuItem>
           )}
         </Select>
@@ -386,7 +410,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
           >
             {units.map((u) => (
               <MenuItem key={u} value={u}>
-                {unitLabel({ unit: u, form })}
+                {unitLabel({ unit: u, form, category_key: key })}
               </MenuItem>
             ))}
           </Select>
@@ -394,8 +418,15 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
         </FormControl>
       )}
       <TextField
-        label="Product name"
-        helperText={hops || d65 ? "The manufacturer's own name, if it has one (e.g. Lupomax, Whirlfloc T)" : "The maltster's own name, if it has one (e.g. Rauch Malt)"}
+        label={yeast ? 'Strain ID (code)' : 'Product name'}
+        required={yeast}
+        helperText={
+          yeast
+            ? "The lab's code (e.g. US-05, WLP001)"
+            : hops || d65
+              ? "The manufacturer's own name, if it has one (e.g. Lupomax, Whirlfloc T)"
+              : "The maltster's own name, if it has one (e.g. Rauch Malt)"
+        }
         value={name}
         onChange={(e) => setName(e.target.value)}
         fullWidth

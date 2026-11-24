@@ -72,7 +72,9 @@ defmodule RockcutApi.Ingredients.Products do
 
     with :ok <- manufacturer(attrs),
          {:ok, attrs} <- category_rules(attrs, key, nil),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :product) do
+         :ok <- name_rules(attrs, key),
+         {:ok, features} <-
+           Features.validate(attrs["features"], attrs["ingredient_id"], :product, attrs["form"]) do
       Repo.transaction(fn ->
         product =
           %Product{}
@@ -103,7 +105,9 @@ defmodule RockcutApi.Ingredients.Products do
     with :ok <- manufacturer(attrs),
          {:ok, attrs} <-
            category_rules(Map.put_new(attrs, "form", product.form), key, product),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :product) do
+         :ok <- name_rules(Map.put_new(attrs, "name", product.name), key),
+         {:ok, features} <-
+           Features.validate(attrs["features"], ingredient_id, :product, attrs["form"]) do
       Repo.transaction(
         fn ->
           version = Versions.given!(attrs)
@@ -122,6 +126,7 @@ defmodule RockcutApi.Ingredients.Products do
           end
 
           Features.write!({:product, product.id}, features)
+          drop_other_form_features!(product.id, updated.form)
           get!(product.id)
         end,
         mode: :immediate
@@ -153,7 +158,26 @@ defmodule RockcutApi.Ingredients.Products do
   "None": "Calcium Sulfate (Gypsum) Powder · None", and with a product name
   "Whirlfloc T · None" (`short_name/1`).
   '''
-  def display_name(%Product{manufacturer: %{name: maker}, ingredient: %{name: ingredient}} = p) do
+  # D64 §4.1 (A1): a yeast product is its strain and the lab's code, then
+  # the lab: "Chico Ale US-05 · Fermentis", "Dry Chico II-1001D · Inland Island".
+  def display_name(
+        %Product{manufacturer: %{name: maker}, ingredient: %{name: _}, unit: "each"} = p
+      )
+      when p.form in ["Dry", "Liquid"] do
+    if yeast?(p),
+      do: "#{short_name(p)} · #{maker}",
+      else: default_display_name(p, maker)
+  end
+
+  def display_name(%Product{manufacturer: %{name: maker}, ingredient: %{name: _}} = p),
+    do: default_display_name(p, maker)
+
+  def display_name(%Product{manufacturer_party_id: nil, ingredient: %{name: _}} = p),
+    do: "#{short_name(p)} · None"
+
+  def display_name(_), do: nil
+
+  defp default_display_name(%Product{ingredient: %{name: ingredient}} = p, maker) do
     item = Enum.join(Enum.reject([ingredient, blank(p.form)], &is_nil/1), " ")
 
     cond do
@@ -163,10 +187,14 @@ defmodule RockcutApi.Ingredients.Products do
     end
   end
 
-  def display_name(%Product{manufacturer_party_id: nil, ingredient: %{name: _}} = p),
-    do: "#{short_name(p)} · None"
+  # Whether a product is a yeast strain's (by its loaded category, else a query).
+  defp yeast?(%Product{} = p), do: key_of(p) == "yeast"
 
-  def display_name(_), do: nil
+  defp key_of(%Product{ingredient: %{category: %IngredientCategory{} = category}}),
+    do: Catalog.key(category)
+
+  defp key_of(%Product{ingredient_id: id}) when is_integer(id), do: Catalog.ingredient_key(id)
+  defp key_of(_), do: nil
 
   @doc """
   The product without its manufacturer: the ingredient and the product name
@@ -182,14 +210,29 @@ defmodule RockcutApi.Ingredients.Products do
 
   def short_name(_), do: nil
 
-  @doc "A product's unit as the screens label it (\"tablets\" on a Tablet `each`; `Catalog.unit_label/2`)."
+  @doc """
+  A product's unit as the screens label it ("tablets" on a Tablet `each`;
+  D64 "bricks" / "pitchables" on a Dry / Liquid yeast; `Catalog.unit_label/3`).
+  """
   def unit_label(nil), do: "lb"
+
+  def unit_label(%Product{unit: "each", form: form} = p),
+    do: Catalog.unit_label("each", form, key_of(p))
+
   def unit_label(%Product{unit: unit, form: form}), do: Catalog.unit_label(unit || "lb", form)
 
   def unit_label(id) do
-    case Repo.one(from(p in Product, where: p.id == ^id, select: {p.unit, p.form})) do
-      nil -> "lb"
-      {unit, form} -> Catalog.unit_label(unit, form)
+    case Repo.one(
+           from(p in Product, where: p.id == ^id, select: {p.unit, p.form, p.ingredient_id})
+         ) do
+      nil ->
+        "lb"
+
+      {"each", form, ingredient_id} ->
+        Catalog.unit_label("each", form, Catalog.ingredient_key(ingredient_id))
+
+      {unit, form, _} ->
+        Catalog.unit_label(unit, form)
     end
   end
 
@@ -225,8 +268,11 @@ defmodule RockcutApi.Ingredients.Products do
 
       true ->
         product = Repo.preload(product, :ingredient)
-        words = if unit_label(product) == "tablets", do: "tablets", else: "numbers"
-        {:error, {:invalid, %{base: ["#{short_name(product)} is counted in whole #{words}"]}}}
+        label = unit_label(product)
+        words = if Map.has_key?(Catalog.count_words(), label), do: label, else: "numbers"
+        # D64 §4.1: a yeast product goes by its code, "US-05 is counted in whole bricks".
+        name = if product.name && yeast?(product), do: product.name, else: short_name(product)
+        {:error, {:invalid, %{base: ["#{name} is counted in whole #{words}"]}}}
     end
   end
 
@@ -329,6 +375,43 @@ defmodule RockcutApi.Ingredients.Products do
             unit_rules(attrs, key, category, form, product)
         end
     end
+  end
+
+  # D64 §4.1 (A1): a yeast product's name is the lab's code (the strain ID), so it has one.
+  defp name_rules(attrs, "yeast") do
+    case attrs["name"] do
+      name when is_binary(name) ->
+        if String.trim(name) == "",
+          do: {:error, {:invalid, %{name: ["Enter the lab's code (the strain ID, e.g. US-05)"]}}},
+          else: :ok
+
+      _ ->
+        {:error, {:invalid, %{name: ["Enter the lab's code (the strain ID, e.g. US-05)"]}}}
+    end
+  end
+
+  defp name_rules(_attrs, _key), do: :ok
+
+  # D64 §4.3: a value only another form takes (pitch size on a product
+  # changed from Liquid to Dry) goes with the form change.
+  defp drop_other_form_features!(product_id, form) do
+    stale =
+      from(v in RockcutApi.Ingredients.ProductFeatureValue,
+        join: p in assoc(v, :product),
+        join: i in assoc(p, :ingredient),
+        join: c in assoc(i, :category),
+        join: a in RockcutApi.Ingredients.CategoryFeatureType,
+        on:
+          a.feature_type_id == v.feature_type_id and
+            (a.category_id == c.id or a.category_id == c.parent_id),
+        where:
+          v.product_id == ^product_id and not is_nil(a.only_form) and
+            a.only_form != ^(form || ""),
+        select: v.id
+      )
+      |> Repo.all()
+
+    Repo.delete_all(from(v in RockcutApi.Ingredients.ProductFeatureValue, where: v.id in ^stale))
   end
 
   defp has_lots?(product),

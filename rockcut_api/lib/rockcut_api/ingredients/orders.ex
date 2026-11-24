@@ -739,7 +739,12 @@ defmodule RockcutApi.Ingredients.Orders do
         {:error, reason} -> Repo.rollback(reason)
       end
 
-    case Features.check_required(product.ingredient_id, features) do
+    case Features.check_required(
+           product.ingredient_id,
+           features,
+           Features.copied_keys(product.id),
+           product.form
+         ) do
       :ok ->
         :ok
 

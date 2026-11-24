@@ -41,10 +41,12 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   // D65 (decisions 5): with offers, Supplier starts as the reorder offer's, else the newest offer's, and is required.
   const [supplierId, setSupplierId] = useState<number | ''>(() => defaultLotSupplier(offers, product.reorder_offer_id) ?? '')
   const startPack = productPack(product.offers)
-  const [packSize, setPackSize] = useState(first?.pack_size ?? (hops ? '11' : String(startPack?.size ?? '')))
+  // D64 §4.1: a yeast lot with no offer or lots counts single bricks or pitchables.
+  const yeastPack = product.category_key === 'yeast' ? (product.form === 'Dry' ? 'brick' : product.form === 'Liquid' ? 'pitchable' : null) : null
+  const [packSize, setPackSize] = useState(first?.pack_size ?? (hops ? '11' : String(startPack?.size ?? (yeastPack ? '1' : ''))))
   // D62 §3.5: the pack is the offer's (a sack, for grain; always a box of 11 lb, for hops).
   // D65: with no offer or lots, no pack name; the API starts it as the unit's usual pack (lb → bag, …).
-  const [packName, setPackName] = useState<string | null>(first?.pack_name ?? startPack?.name ?? (hops ? 'box' : isD65Key(product.category_key) ? null : 'sack'))
+  const [packName, setPackName] = useState<string | null>(first?.pack_name ?? startPack?.name ?? (hops ? 'box' : (yeastPack ?? (isD65Key(product.category_key) ? null : 'sack'))))
   const [cropYear, setCropYear] = useState(coloradoToday().slice(0, 4))
   const [lotNumber, setLotNumber] = useState('')
   const [received, setReceived] = useState(coloradoToday())
@@ -57,7 +59,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   // D65 §5.4: Brix on fruit and Liquid sugar lots (optional, typical range beside it), extract on sugar lots (prefilled).
   const featureTypes = hops || d65 ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : typesFor(types, product.category?.id, product.category?.parent_id)
   const basis = lotFeatureBasis(product.features, featureTypes, product.category?.id, product.category?.parent_id)
-  const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id)
+  const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id, product.form ?? null)
   // A hop lot starts empty: the range is the product's, the actuals come from the supplier's sheet.
   const shown = drafts ?? draftsFrom(hops ? null : d65 ? basis.standard : product.features, featureTypes)
   const crop = parseCropYear(cropYear, coloradoToday())
@@ -206,7 +208,8 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={create.isPending} />
       ) : (
         d65 ? (
-          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} disabled={create.isPending} />
+          // D64: pitch size is required on a Liquid yeast lot (copied from the product when it has one).
+          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} required={required} disabled={create.isPending} />
         ) : (
           <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
         )

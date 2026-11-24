@@ -376,7 +376,9 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   def uncomplete_step(conn, %{"id" => id}) do
     with {:ok, conn} <- writer(conn),
          {:ok, result, token} <-
-           tracked(conn, step_scope([id]), false, fn _ -> Steps.uncomplete(id) end) do
+           tracked(conn, step_scope([id]), false, fn _ ->
+             Steps.uncomplete(id, actor(conn))
+           end) do
       render_result(conn, result, token)
     end
     |> ProductionErrors.handle(conn)

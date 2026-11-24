@@ -454,12 +454,17 @@ defmodule RockcutApiWeb.JSONHelpers do
       # D56 decision 14: a failed test's retest day ("✗ Fail · retest Wed").
       retest_on: retest_on(t.production_step),
       # Mark not done is refused while the retest is done (`retest_done`).
-      retest_done: retest_done(t.production_step)
+      retest_done: retest_done(t.production_step),
+      # D64 §4.8: a Yeast harvest step's check-off (`harvested` / `dumped`).
+      yeast_outcome: step_yeast_outcome(t.production_step)
     }
   end
 
   defp step_result(%RockcutApi.Production.Step{result: result}), do: result
   defp step_result(_not_loaded), do: nil
+
+  defp step_yeast_outcome(%RockcutApi.Production.Step{yeast_outcome: o}), do: o
+  defp step_yeast_outcome(_not_loaded), do: nil
 
   defp retest_on(%RockcutApi.Production.Step{retest: %RockcutApi.Production.Step{due_on: d}}),
     do: d
@@ -762,7 +767,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       retest_days: s.retest_days,
       retest_of_id: s.retest_of_id,
       # D56 decision 22: planned before brew day, whatever its date is now.
-      pre_brew: s.pre_brew
+      pre_brew: s.pre_brew,
+      # D64 §4.8: a Yeast harvest step's check-off (`harvested` / `dumped`) and note.
+      yeast_outcome: s.yeast_outcome,
+      yeast_note: s.yeast_note
     }
   end
 
@@ -1028,6 +1036,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       formula: ing.formula,
       # D65: ion values (ppm @ 1 g/gal) on a Water Salts ingredient, by key.
       ions: ing.ions,
+      # D64: a yeast strain's type (nil on every other ingredient).
+      yeast_strain_type_id: ing.yeast_strain_type_id,
       delete_blocked: ing.delete_blocked,
       lots: maybe_render(ing, :lots, &Enum.map(&1, fn l -> ingredient_lot_summary(l) end)),
       inserted_at: ing.inserted_at,
@@ -1096,7 +1106,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       unit: p.unit,
       # D65: "tablets" for `each` on a Tablet product; else the unit.
-      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
+      unit_label: RockcutApi.Ingredients.Products.unit_label(p),
       form: p.form,
       origin: p.origin,
       # D65: its ingredient's ion values, read-only.
@@ -1207,6 +1217,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       partner: maybe_render(m, :partner, &party_summary/1),
       note: m.note || movement_order_note(m),
       purchase_order_id: maybe_render(m, :purchase_order_line, & &1.order_id),
+      # D64 §4.6: the batch a pitch went into.
+      batch_id: m.batch_id,
       entered_by: maybe_render(m, :entered_by, &person_name/1),
       inserted_at: m.inserted_at
     }
@@ -1499,6 +1511,8 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: ing.id,
       name: ing.name,
+      # D64: the library's Strain Type column and filter.
+      yeast_strain_type_id: ing.yeast_strain_type_id,
       category: maybe_render(ing, :category, &ingredient_category_summary/1)
     }
   end
@@ -1532,7 +1546,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       unit: p.unit,
-      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
+      unit_label: RockcutApi.Ingredients.Products.unit_label(p),
       form: p.form,
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1)
     }

@@ -23,7 +23,8 @@ export function money(v: string | number | null | undefined, digits = 2): string
  * reads as the box does, "pail · 5 gal", "tub · 872 tablets".
  */
 export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null; pack_note?: string | null }, unit = 'lb'): string {
-  const size = `${Number(o.pack_size)} ${unit}`
+  // D64: a pack of one that is the unit itself reads "brick · 1 (500 g)", not "brick · 1 bricks".
+  const size = isCountUnit(unit) && Number(o.pack_size) === 1 && packPlural(o.pack_name) === unit ? '1' : `${Number(o.pack_size)} ${unit}`
   // D65 (A16): the pack note follows the pack, "tub · 872 tablets (5 lb)".
   if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}${o.pack_note ? ` (${o.pack_note})` : ''}`
   return o.form ? `${size} ${o.form}` : size
@@ -121,6 +122,19 @@ export function runningTotal(lines: DraftLine[], emptyPack: string | null = 'sac
  * grain wording), else null ("packs"), with no supplier too.
  */
 export const emptyOrderPack = (supplierOfferPacks: string[]): string | null => (sharedPackName(supplierOfferPacks) === 'sack' ? 'sack' : null)
+
+/**
+ * D65 DEV QA gap 9 (D64 §9): an order line's words: its offer's pack once one
+ * is picked, else gap 7's rule (`emptyOrderPack`): "Sacks" / "$ / sack" for a
+ * sacks-only supplier, "Packs" / "$ / pack" otherwise (no supplier, mixed,
+ * any other pack). A number typed before the pick then means packs, which is
+ * what it becomes.
+ */
+export function orderLineWords(offerPack: string | null | undefined, supplierOfferPacks: string[]): { pack: string | null; label: string; priceLabel: string } {
+  const pack = offerPack ?? emptyOrderPack(supplierOfferPacks)
+  const plural = packPlural(pack)
+  return { pack, label: plural.charAt(0).toUpperCase() + plural.slice(1), priceLabel: `$ / ${pack ?? 'pack'}` }
+}
 
 /**
  * Progress to the supplier's order target (decision 48; D62 A5: every pack

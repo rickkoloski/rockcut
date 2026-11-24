@@ -474,9 +474,39 @@ defmodule RockcutApi.Production.Batches do
   ## Changing
 
   @doc """
+  D64 Stop 4: nil, or `{:batch_has_yeast, label}` for the first of
+  `batch_ids` with yeast pitched into it or harvested from it
+  (`Yeast.Generations.batches_with_yeast/1`): a delete is refused before it
+  starts, and nothing changes.
+  """
+  def yeast_blocked(batch_ids) do
+    held = RockcutApi.Yeast.Generations.batches_with_yeast(batch_ids)
+
+    case Enum.find(batch_ids, &MapSet.member?(held, &1)) do
+      nil ->
+        nil
+
+      id ->
+        batch = Repo.get!(Batch, id) |> Repo.preload([:brand, :split_parent])
+        {:batch_has_yeast, String.trim(label(batch, p_numbers()))}
+    end
+  end
+
+  @doc "The refusal's sentence."
+  def yeast_message({:batch_has_yeast, label}),
+    do: "#{label} has yeast pitched into it or harvested from it. Remove those first."
+
+  @doc "`yeast_blocked/1` inside a transaction: rolls it back with the refusal."
+  def yeast_blocked!(batch_ids) do
+    if reason = yeast_blocked(batch_ids), do: Repo.rollback(reason)
+    :ok
+  end
+
+  @doc """
   Delete a planned batch with its steps, links and vessels (`:not_planned`
   once brewed; `:split` while it's split and `:split_part` for a part: Undo
-  split first). `{:ok, renumbered}`.
+  split first; D64 Stop 4: `{:batch_has_yeast, label}` with yeast pitched
+  into it or harvested from it). `{:ok, renumbered}`.
   """
   def delete_planned(%Batch{split_parent_id: id}) when not is_nil(id), do: {:error, :split_part}
 
@@ -486,6 +516,7 @@ defmodule RockcutApi.Production.Batches do
       {:error, :split}
     else
       Repo.transaction(fn ->
+        yeast_blocked!([batch.id])
         {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
         renumbered
       end)

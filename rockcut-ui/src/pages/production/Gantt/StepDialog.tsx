@@ -208,6 +208,11 @@ export default function StepDialog({ step, batch, tree, tanks, brewers, today, s
               </Box>
             )}
           </Typography>
+          {done && step.yeast_outcome && (
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }} data-testid="step-dialog-yeast">
+              {[step.yeast_outcome === 'dumped' ? 'Yeast dumped' : 'Yeast harvested (see the batch page)', step.yeast_note].filter(Boolean).join(' · ')}
+            </Typography>
+          )}
           {retestOfLine && (
             <Typography variant="body2" color="text.secondary" data-testid="step-dialog-retest-of">
               {retestOfLine}

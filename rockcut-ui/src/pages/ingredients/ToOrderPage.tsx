@@ -58,6 +58,10 @@ interface Start {
  * of the table, its supplier and pack size wrapping, so the row fits with no
  * sideways scroll and the pack size is readable (gaps 16, 19).
  */
+// D64 Stop 4: at 360 px the "Below minimum" chip, "2 pitchables" and To order
+// left the checkbox column 1 px too few; it gives up its 4 px left padding there.
+const CHECK = { '&&': { pl: { xs: 0 } } }
+
 export default function ToOrderPage() {
   const { data: rows = [], isLoading } = useApiList<ReorderRow>(['ingredient_reorder'], '/api/ingredient_reorder')
   const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
@@ -207,7 +211,7 @@ export default function ToOrderPage() {
         <Table size="small" sx={{ '& td, & th': { px: { xs: 1, sm: 2 } } }} data-testid="to-order-table">
           <TableHead>
             <TableRow>
-              <TableCell padding="checkbox" />
+              <TableCell padding="checkbox" sx={CHECK} />
               <TableCell>Product</TableCell>
               <TableCell align="right">On hand</TableCell>
               <TableCell align="right" sx={WIDE}>
@@ -233,7 +237,7 @@ export default function ToOrderPage() {
             {view.map(({ row: r, offers, offer, figures }) => (
               <Fragment key={r.product_id}>
                 <TableRow data-testid={`to-order-${r.product_id}`} sx={narrow ? { '& td': { borderBottom: 0 } } : undefined}>
-                  <TableCell padding="checkbox">
+                  <TableCell padding="checkbox" sx={CHECK}>
                     {figures && figures.toOrder > 0 && (
                       <Checkbox
                         checked={picked.has(r.product_id)}
