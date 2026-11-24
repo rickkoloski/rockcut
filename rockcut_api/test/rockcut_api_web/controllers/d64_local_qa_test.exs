@@ -1587,4 +1587,24 @@ defmodule RockcutApiWeb.D64LocalQaTest do
       assert latest(c.tb).occurred_on == day(-3)
     end
   end
+
+  describe "lead decisions 9, gap 25" do
+    test "a harvest into a brink deleted since says so; nothing is written", c do
+      {_, harvest} = brewed(c, "41")
+      {204, _} = req(c.mgr, :delete, "/api/yeast/brinks/#{c.tb2.id}")
+
+      assert {409, %{"errors" => %{"base" => ["That brink was deleted. Pick another brink."]}}} =
+               complete(
+                 c,
+                 harvest,
+                 harvest_params(c, %{
+                   yeast_brink_id: c.tb2.id,
+                   yeast_product_ids: [c.us05.id],
+                   yeast_generation: 1
+                 })
+               )
+
+      assert entries() == [] and is_nil(step(harvest).done_on)
+    end
+  end
 end

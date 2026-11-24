@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   Box,
   Button,
@@ -26,8 +26,7 @@ import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
-import { httpStatus } from '../../lib/notFound'
-import parseApiError from '../../lib/parseApiError'
+import { goneOr, httpStatus, retryUnless404 } from '../../lib/notFound'
 import { parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE } from '../../lib/inventory'
 import { WRAP_ITEM, WRAP_SELECT } from '../../lib/ingredientFeatures'
@@ -55,8 +54,10 @@ function DateField({ value, onChange, testId, min, error }: { value: string; onC
   )
 }
 
-/** A stale save (409): the brinks are refetched so a retry sees the change. */
-function useBrinkWrite(path: string) {
+const refreshBrinks = (qc: QueryClient) => Promise.all(BRINK_KEYS.map((queryKey) => qc.invalidateQueries({ queryKey })))
+
+/** A stale save (409) or a deleted brink (404): the brinks are refetched so a retry sees the change. */
+function useBrinkWrite(path: string, name: string) {
   const qc = useQueryClient()
   const write = useApiCreate<YeastBrink>(path, { invalidateKeys: BRINK_KEYS })
   const send = async (body: Record<string, unknown>, setError: (e: string) => void, onDone: () => void) => {
@@ -64,8 +65,8 @@ function useBrinkWrite(path: string) {
       await write.mutateAsync(body)
       onDone()
     } catch (err) {
-      if (httpStatus(err) === 409) await Promise.all(BRINK_KEYS.map((k) => qc.invalidateQueries({ queryKey: k })))
-      setError(parseApiError(err))
+      if ([404, 409].includes(httpStatus(err) ?? 0)) await refreshBrinks(qc)
+      setError(goneOr(err, `Someone else deleted ${name}.`))
     }
   }
   return { send, pending: write.isPending }
@@ -80,7 +81,7 @@ export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [version] = useState(brink.yeast?.lock_version)
-  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/pitch`)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/pitch`, brink.name)
   const onHand = Number(brink.yeast?.on_hand_lb ?? 0)
   const lb = readLb(text, { max: onHand, brink: brink.name })
   const early = beforeHarvestText(brink, date)
@@ -124,6 +125,8 @@ export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   )
 }
 
+const COUNT_GONE = 'Someone else deleted this count.'
+
 type HistoryCount = YeastHistoryRecord['counts'][number]
 
 /**
@@ -159,10 +162,10 @@ export function CountBrinkDialog({ brink, count, first, onClose }: { brink: Yeas
       else await create.mutateAsync({ brink_id: brink.id, ...body })
       onClose()
     } catch (err) {
-      // Changed, pitched or deleted since: the input stays, History behind it
+      // Changed, pitched or deleted since (gap 25): the input stays, History behind it
       // shows the count now (Save stays busy until it has), so reopening does too.
-      if (count) await qc.invalidateQueries({ queryKey: ['yeast_brink_history'] })
-      setError(parseApiError(err))
+      if (count) await refreshBrinks(qc)
+      setError(goneOr(err, count ? COUNT_GONE : `Someone else deleted ${brink.name}.`))
     }
   }
 
@@ -183,7 +186,7 @@ export function AdjustBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClo
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [version] = useState(brink.yeast?.lock_version)
-  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/adjust`)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/adjust`, brink.name)
   const lb = readLb(text, { zeroOk: true })
   const early = beforeHarvestText(brink, date)
 
@@ -217,7 +220,7 @@ export function DumpBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [version] = useState(brink.yeast?.lock_version)
-  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/dump`)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/dump`, brink.name)
   return (
     <ConfirmDialog
       open
@@ -242,7 +245,7 @@ export function DumpBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose
 /** D64 §6.3: Mark clean (a dirty brink): clears the mark and ticks "Clean YB2". */
 export function CleanBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
-  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/clean`)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/clean`, brink.name)
   return (
     <ConfirmDialog
       open
@@ -285,7 +288,7 @@ function removeQuestion(e: HistoryEntry, brink: string): string {
  */
 export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
-  const { data: records = [], isLoading } = useApiList<YeastHistoryRecord>(['yeast_brink_history', brink.id], `/api/yeast/brinks/${brink.id}/history`)
+  const { data: records = [], isLoading, error: loadError } = useApiList<YeastHistoryRecord>(['yeast_brink_history', brink.id], `/api/yeast/brinks/${brink.id}/history`, undefined, { retry: retryUnless404 })
   const [removing, setRemoving] = useState<HistoryEntry | null>(null)
   const [editing, setEditing] = useState<{ count: HistoryCount; first?: string } | null>(null)
   const [deleting, setDeleting] = useState<HistoryCount | null>(null)
@@ -299,7 +302,12 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
       <DialogTitle>History · {brink.name}</DialogTitle>
       <DialogContent>
         {isLoading && <CircularProgress size={24} />}
-        {!isLoading && records.length === 0 && (
+        {loadError && (
+          <Typography color="error" variant="body2" role="alert" data-testid="brink-history-error">
+            {goneOr(loadError, `Someone else deleted ${brink.name}.`)}
+          </Typography>
+        )}
+        {!isLoading && !loadError && records.length === 0 && (
           <Typography variant="body2" color="text.secondary">
             Nothing yet
           </Typography>
@@ -391,8 +399,8 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
               await removeCount.mutateAsync(deleting.id)
               setDeleting(null)
             } catch (err) {
-              await qc.invalidateQueries({ queryKey: ['yeast_brink_history'] })
-              setRemoveError(parseApiError(err))
+              await refreshBrinks(qc)
+              setRemoveError(goneOr(err, COUNT_GONE))
             }
           }}
         >
@@ -416,7 +424,8 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
               await remove.mutateAsync(removing.id)
               setRemoving(null)
             } catch (err) {
-              setRemoveError(parseApiError(err))
+              await refreshBrinks(qc)
+              setRemoveError(goneOr(err, 'Someone else removed this entry.'))
             }
           }}
         >

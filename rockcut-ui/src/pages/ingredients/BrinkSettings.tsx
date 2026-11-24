@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Box, Button, Chip, IconButton, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
@@ -10,7 +10,7 @@ import DecimalInput from '../../components/DecimalInput'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import api from '../../lib/api'
 import { parseDecimal } from '../../lib/brewingUnits'
-import parseApiError from '../../lib/parseApiError'
+import { goneOr } from '../../lib/notFound'
 import { lbText } from '../../lib/yeast'
 import type { YeastBrink } from '../../lib/types'
 
@@ -20,6 +20,12 @@ interface Reply {
 }
 
 const KEYS = [['yeast_brinks']]
+
+/** A refused write: the lists show what's there now (gap 25). */
+function useRefresh() {
+  const qc = useQueryClient()
+  return () => Promise.all(KEYS.map((queryKey) => qc.invalidateQueries({ queryKey })))
+}
 
 /**
  * D64 §6.5 (A7): Yeast settings → Brinks: name, empty weight (lb), order and
@@ -33,6 +39,7 @@ export default function BrinkSettings() {
     queryFn: async () => (await api.get<Reply>('/api/yeast/brinks', { params: { all: 'true' } })).data,
   })
   const [editing, setEditing] = useState<YeastBrink | 'new' | null>(null)
+  const refresh = useRefresh()
   const [deleting, setDeleting] = useState<YeastBrink | null>(null)
   const [error, setError] = useState<string | null>(null)
   const update = useApiUpdate<YeastBrink>((id) => `/api/yeast/brinks/${id}`, { invalidateKeys: KEYS })
@@ -45,7 +52,8 @@ export default function BrinkSettings() {
     try {
       await update.mutateAsync({ id: b.id, active })
     } catch (err) {
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${b.name}.`))
     }
   }
 
@@ -56,7 +64,8 @@ export default function BrinkSettings() {
       setDeleting(null)
     } catch (err) {
       setDeleting(null)
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${deleting.name}.`))
     }
   }
 
@@ -130,6 +139,7 @@ export default function BrinkSettings() {
 }
 
 function BrinkForm({ brink, next, onClose }: { brink: YeastBrink | null; next: number; onClose: () => void }) {
+  const refresh = useRefresh()
   const [name, setName] = useState(brink?.name ?? '')
   const [weight, setWeight] = useState(brink?.empty_weight_lb != null ? String(Number(brink.empty_weight_lb)) : '')
   const [position, setPosition] = useState(String(brink?.position ?? next))
@@ -148,7 +158,8 @@ function BrinkForm({ brink, next, onClose }: { brink: YeastBrink | null; next: n
       else await create.mutateAsync(payload)
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${brink?.name}.`))
     }
   }
 

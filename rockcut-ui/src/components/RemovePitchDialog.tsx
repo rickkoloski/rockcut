@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Alert } from '@mui/material'
 import ConfirmDialog from './ConfirmDialog'
+import { useQueryClient } from '@tanstack/react-query'
 import { useApiDelete } from '../hooks/useApiMutation'
 import { GRAIN_KEYS } from '../lib/inventory'
-import parseApiError from '../lib/parseApiError'
+import { goneOr } from '../lib/notFound'
+
+const KEYS = [...GRAIN_KEYS, ['yeast_batch']]
 
 /**
  * D64 lead decisions 3, gap 5: take back a mistaken pitch of purchased yeast
@@ -12,7 +15,8 @@ import parseApiError from '../lib/parseApiError'
  */
 export default function RemovePitchDialog({ id, what, onClose }: { id: number; what: string; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
-  const remove = useApiDelete((mid) => `/api/yeast/pitches/${mid}`, { invalidateKeys: [...GRAIN_KEYS, ['yeast_batch']] })
+  const remove = useApiDelete((mid) => `/api/yeast/pitches/${mid}`, { invalidateKeys: KEYS })
+  const qc = useQueryClient()
   return (
     <ConfirmDialog
       open
@@ -26,7 +30,8 @@ export default function RemovePitchDialog({ id, what, onClose }: { id: number; w
           await remove.mutateAsync(id)
           onClose()
         } catch (err) {
-          setError(parseApiError(err))
+          await Promise.all(KEYS.map((queryKey) => qc.invalidateQueries({ queryKey })))
+          setError(goneOr(err, 'Someone else removed this pitch.'))
         }
       }}
     >

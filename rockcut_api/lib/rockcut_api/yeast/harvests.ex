@@ -438,7 +438,9 @@ defmodule RockcutApi.Yeast.Harvests do
 
   defp active_brink!(id) do
     if id in [nil, ""], do: Repo.rollback({:invalid, %{brink_id: ["Pick the brink"]}})
-    brink = brink!(id)
+    # Lead decisions 9 (gap 25): deleted while the Harvest dialog was open.
+    id = RockcutApi.Ids.parse(to_string(id))
+    brink = (id && Repo.get(Brink, id)) || refuse("That brink was deleted. Pick another brink.")
 
     unless brink.active,
       do: Repo.rollback({:invalid, %{brink_id: ["#{brink.name} is retired"]}})

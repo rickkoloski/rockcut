@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Alert,
   Box,
@@ -28,11 +29,17 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { STRAIN_TYPES_KEY, useStrainTypes } from '../../hooks/useStrainTypes'
-import parseApiError from '../../lib/parseApiError'
+import { goneOr } from '../../lib/notFound'
 import type { YeastStrainType } from '../../lib/types'
 import BrinkSettings from './BrinkSettings'
 
 const KEYS = [STRAIN_TYPES_KEY, ['ingredients'], ['ingredient_products']]
+
+/** A refused write: the lists show what's there now (gap 25). */
+function useRefresh() {
+  const qc = useQueryClient()
+  return () => Promise.all(KEYS.map((queryKey) => qc.invalidateQueries({ queryKey })))
+}
 
 /**
  * D64 §6.5 (A7, A13): the yeast settings from the gear on Yeast Strains.
@@ -44,6 +51,7 @@ export default function YeastSettingsDialog({ open, onClose }: { open: boolean; 
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
   const { data: reply, isLoading } = useStrainTypes()
   const [editing, setEditing] = useState<YeastStrainType | 'new' | null>(null)
+  const refresh = useRefresh()
   const [deleting, setDeleting] = useState<YeastStrainType | null>(null)
   const [error, setError] = useState<string | null>(null)
   const update = useApiUpdate<YeastStrainType>((id) => `/api/yeast/strain_types/${id}`, { invalidateKeys: KEYS })
@@ -58,7 +66,8 @@ export default function YeastSettingsDialog({ open, onClose }: { open: boolean; 
     try {
       await update.mutateAsync({ id: t.id, active })
     } catch (err) {
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${t.name}.`))
     }
   }
 
@@ -69,7 +78,8 @@ export default function YeastSettingsDialog({ open, onClose }: { open: boolean; 
       setDeleting(null)
     } catch (err) {
       setDeleting(null)
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${deleting.name}.`))
     }
   }
 
@@ -157,6 +167,7 @@ export default function YeastSettingsDialog({ open, onClose }: { open: boolean; 
 }
 
 function StrainTypeForm({ type, next, onClose }: { type: YeastStrainType | null; next: number; onClose: () => void }) {
+  const refresh = useRefresh()
   const [name, setName] = useState(type?.name ?? '')
   const [position, setPosition] = useState(String(type?.position ?? next))
   const [error, setError] = useState<string | null>(null)
@@ -172,7 +183,8 @@ function StrainTypeForm({ type, next, onClose }: { type: YeastStrainType | null;
       else await create.mutateAsync(payload)
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      await refresh()
+      setError(goneOr(err, `Someone else deleted ${type?.name}.`))
     }
   }
 

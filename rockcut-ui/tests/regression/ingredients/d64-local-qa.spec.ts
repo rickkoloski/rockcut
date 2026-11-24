@@ -319,3 +319,127 @@ test('gap 24: a count moved across a harvest on top settles Recount due and the 
   await expect(row).toContainText('Recount due')
   expect((await brink(tb.id))!.recount_due).toBe(true)
 })
+
+test('gap 25: Edit, Delete and Remove of what someone else took out say so, and History behind is up to date', async ({ page, browser }) => {
+  const tb = await yeast.brink('YB-gone')
+  const [a, b] = [await yeast.brewed('Galactic'), await yeast.brewed('Enos')]
+  await harvest(a, 'Yeast harvest', tb.id, '20')
+  const ctx = await browser.newContext({ storageState: authFile('breweryMgr') })
+  const mgr = await ctx.newPage()
+  const deleteIt = async (id: number) => {
+    const theirs = await action(mgr, tb.id, 'history', 'brink-history-dialog')
+    await theirs.getByTestId(`brink-history-count-delete-${id}`).click()
+    await mgr.getByTestId('brink-history-count-confirm').getByRole('button', { name: 'Delete' }).click()
+    await expect(mgr.getByTestId('brink-history-count-confirm')).toHaveCount(0)
+  }
+  const gone = 'Someone else deleted this count.'
+
+  // Edit open while the manager deletes it.
+  await addCount(tb.id)
+  let id = (await history(tb.id))[0].counts[0].id
+  let h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await h.getByTestId(`brink-history-count-edit-${id}`).click()
+  const d = page.getByTestId('brink-count-dialog')
+  await deleteIt(id)
+  await d.getByTestId('brink-count-pct').fill('61')
+  await d.getByRole('button', { name: 'Save' }).click()
+  await expect(d).toContainText(gone)
+  await expect(d).not.toContainText('Not found')
+  await d.getByRole('button', { name: 'Cancel' }).click()
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toHaveCount(0)
+  await h.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByTestId(`brink-recount-due-${tb.id}`)).toBeVisible()
+
+  // Delete open while the manager deletes it.
+  await addCount(tb.id)
+  id = (await history(tb.id))[0].counts[0].id
+  h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await h.getByTestId(`brink-history-count-delete-${id}`).click()
+  await deleteIt(id)
+  const q = page.getByTestId('brink-history-count-confirm')
+  await q.getByRole('button', { name: 'Delete' }).click()
+  await expect(q.getByTestId('brink-history-count-error')).toHaveText(gone)
+  await q.getByRole('button', { name: 'Cancel' }).click()
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toHaveCount(0)
+
+  // Remove open on a pitch the manager removes.
+  await stock(tb.id, 'pitch', { lb: '1', batch_id: b.id })
+  const entry = (await history(tb.id))[0].entries.find((e) => e.kind === 'pitched')!
+  h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  await h.getByTestId(`brink-history-remove-${entry.id}`).click()
+  const theirs = await action(mgr, tb.id, 'history', 'brink-history-dialog')
+  await theirs.getByTestId(`brink-history-remove-${entry.id}`).click()
+  await mgr.getByTestId('brink-history-remove-confirm').getByRole('button', { name: 'Remove' }).click()
+  await expect(mgr.getByTestId('brink-history-remove-confirm')).toHaveCount(0)
+  const r = page.getByTestId('brink-history-remove-confirm')
+  await r.getByRole('button', { name: 'Remove' }).click()
+  await expect(r.getByTestId('brink-history-remove-error')).toHaveText('Someone else removed this entry.')
+  await r.getByRole('button', { name: 'Cancel' }).click()
+  await expect(h.getByTestId(`brink-history-entry-${entry.id}`)).toHaveCount(0)
+  await ctx.close()
+})
+
+test('gap 25: a lot pitch someone else removed says so', async ({ page }) => {
+  const { product } = await bricks()
+  const a = await yeast.brewed('Galactic')
+  const pitched = await (await apiAs('brewer1')).post(`/api/ingredient_products/${product.id}/pitch`, { data: { batch_id: a.id, quantity: '2', occurred_on: denverToday() } })
+  const id = (await pitched.json()).data[0].id
+  await page.goto(`/batches/${a.id}`)
+  await page.getByTestId(`batch-yeast-remove-${id}`).click()
+  expect((await (await apiAs('breweryMgr')).delete(`/api/yeast/pitches/${id}`)).ok()).toBe(true)
+  const r = page.getByTestId('remove-pitch-confirm')
+  await r.getByRole('button', { name: 'Remove' }).click()
+  await expect(r.getByTestId('remove-pitch-error')).toHaveText('Someone else removed this pitch.')
+  await r.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByTestId('batch-yeast-none')).toBeVisible()
+})
+
+test.describe('as the Brewery manager', () => {
+  test.use({ storageState: authFile('breweryMgr') })
+
+  test('gap 25: a brink or strain type someone else deleted: Edit, Retire, Delete and History say so', async ({ page }) => {
+    const owner = await apiAs('owner')
+    const mine = await Promise.all(['YB-e', 'YB-r', 'YB-d', 'YB-h'].map((n) => yeast.brink(n)))
+    const type = await (await apiAs('breweryMgr')).post('/api/yeast/strain_types', { data: { name: tempTag('Type').slice(0, 40), position: 900 } })
+    expect(type.status(), await type.text()).toBe(201)
+    const t = (await type.json()).data as { id: number; name: string }
+    const [edit, retire, del, hist] = mine
+    await page.goto('/ingredients/brinks')
+    await page.getByTestId('brinks-settings').click()
+    await page.getByTestId('brinks-settings-yeast').click()
+    const s = page.getByTestId('yeast-settings')
+    const drop = async (path: string) => expect((await owner.delete(`/api/yeast/${path}`)).status()).toBe(204)
+
+    await s.getByTestId(`brink-setting-${edit.id}-edit`).click()
+    await drop(`brinks/${edit.id}`)
+    const d = page.getByTestId('brink-setting-dialog')
+    await d.getByRole('button', { name: 'Save' }).click()
+    await expect(d).toContainText(`Someone else deleted ${edit.name}.`)
+    await d.getByRole('button', { name: 'Cancel' }).click()
+    await expect(s.getByTestId(`brink-setting-${edit.id}`)).toHaveCount(0)
+
+    await drop(`brinks/${retire.id}`)
+    await s.getByTestId(`brink-setting-${retire.id}-active`).click()
+    await expect(s).toContainText(`Someone else deleted ${retire.name}.`)
+    await expect(s.getByTestId(`brink-setting-${retire.id}`)).toHaveCount(0)
+
+    await s.getByTestId(`brink-setting-${del.id}-delete`).click()
+    await drop(`brinks/${del.id}`)
+    await page.getByRole('dialog', { name: 'Delete brink' }).getByRole('button', { name: 'Delete' }).click()
+    await expect(s).toContainText(`Someone else deleted ${del.name}.`)
+
+    await s.getByTestId(`strain-type-${t.id}-edit`).click()
+    await drop(`strain_types/${t.id}`)
+    const n = page.getByTestId('strain-type-dialog')
+    await n.getByRole('button', { name: 'Save' }).click()
+    await expect(n).toContainText(`Someone else deleted ${t.name}.`)
+    await n.getByRole('button', { name: 'Cancel' }).click()
+    await expect(s.getByTestId(`strain-type-${t.id}`)).toHaveCount(0)
+    await s.getByTestId('yeast-settings-close').click()
+
+    await page.getByTestId(`brink-actions-${hist.id}`).click()
+    await drop(`brinks/${hist.id}`)
+    await page.getByTestId('brink-action-history').click()
+    await expect(page.getByTestId('brink-history-error')).toHaveText(`Someone else deleted ${hist.name}.`)
+  })
+})

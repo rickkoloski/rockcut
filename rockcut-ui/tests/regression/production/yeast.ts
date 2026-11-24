@@ -117,6 +117,7 @@ export class Yeast {
     const brewer = await apiAs('brewer1')
     const mgr = await apiAs('breweryMgr')
     for (const id of this.brinks) {
+      if (!(await brink(id))) continue // the spec deleted it
       for (let i = 0; i < 20; i++) {
         const records = (await (await brewer.get(`/api/yeast/brinks/${id}/history`)).json()).data as {
           status: string

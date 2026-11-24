@@ -1547,4 +1547,5 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 23 counts carry `lock_version`: a stale, missing or malformed one on Edit or Delete → 409, nothing written; the dialog keeps its input, History refetches, reopening has the change | LQA "gap 23"; LQ "gap 23" (two sessions) |
 | 24 adding, deleting or re-dating a count settles the Count task one way; a note edit leaves it (an un-tick by hand sticks); an emptied record's count decides what Remove or an un-check brings back | LQA "gap 24"; LQ "gap 24" |
 | 16 (decisions 8) the closing adjustment isn't before the old record's latest count | LQA "gap 16: … dates past a count" |
+| 25 (decisions 9) Edit, Delete or Remove of a count, entry, lot pitch, brink or strain type that's gone says so in a sentence instead of "Not found", and the screen behind refreshes; a harvest into a deleted brink | LQ "gap 25" (3); LQA "gap 25" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |
