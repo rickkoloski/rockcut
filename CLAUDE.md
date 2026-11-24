@@ -76,14 +76,14 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: **D64 (yeast, brinks, harvests and cell counts) is on prod as `v2026.11.23`** (release PR #95: API v45 / UI v41; 14 migrations, so rollback = restore the pre-release snapshot `vs_4bq8yLP0wkx9UKGoVGBKoX4`, then API v44 / UI v40). Matt's prod check passed on desktop and phone (2026-11-24). Prod has the D64 reference seed: 11 yeast products and offers, YB1–YB4, Strain Types. D65 went out in `v2026.11.22`, D62 in `v2026.11.20`, D61 in `v2026.11.19` and D60 in `v2026.11.18`. Prod shared devices: Tablet-1, Tablet-2 (Taproom) and "Brewery Test 1" (the brewhouse device, home Brewery).
+- **Next deliverable**: **Prod is `v2026.11.24`** (security hotfix PR #97, API only: API v46 / UI v41; rollback = API v45 image only). Matt's prod check passed (2026-11-24). **D64 (yeast, brinks, harvests and cell counts) went out in `v2026.11.23`** (release PR #95; 14 migrations). Prod has the D64 reference seed: 11 yeast products and offers, YB1–YB4, Strain Types. D65 went out in `v2026.11.22`, D62 in `v2026.11.20`, D61 in `v2026.11.19` and D60 in `v2026.11.18`. Prod shared devices: Tablet-1, Tablet-2 (Taproom) and "Brewery Test 1" (the brewhouse device, home Brewery).
   - **Ingredient series, in order:**
     - **D63 (next):** recipes on products, brew-day drawdown, °Plato (4987), batch-log time (4986), the rest of 4989/5203 and the last 8 lint errors (4084). Not yet specced. **Stop 0 carry-ins from D64 DEV QA:** 6260 (phone Back on ConfirmDialog), 6261 (empty Voided rows in brink History), 6262 (order footer units). **Matt's rule:** a brew is always saved; a yeast pitch with no matching record is marked "Yeast source needed".
   - **Next new ID:** D66.
   - **Backlog:** 6107 (Scheduler delete confirm), 5910, 5911 (flaky Playwright specs), 5789, 5203, 4084 lint.
   - **Gate order (D44, D60–D65):** local gate → independent local QA (360 px, slow network, two people on one record) → DEV Playwright + a shorter DEV QA. The workflow doc edit waits on Rick.
   - **Build SHA:** `/api/health` reports `{env, sha}`. DEV deploys pass `--build-arg GIT_SHA=…` (API) and `VITE_GIT_SHA=…` (UI); prod deploys pass both, plus `VITE_BUILD_ID`.
-  - D19–D65 are complete except D63 (D57 merged into D56). Matt's queue: 4055 (events in calendar feeds) and 4056 (company-wide events). Handoff: `SESSION_HANDOFF_2026-11-23.md`.
+  - D19–D65 are complete except D63 (D57 merged into D56). Matt's queue: 4055 (events in calendar feeds) and 4056 (company-wide events). Handoff: `SESSION_HANDOFF_2026-11-24.md`.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
