@@ -147,7 +147,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
 
   const { grains, children } = grainCategories(categories)
   const { category: hopsCategory } = keyedCategories(categories, 'hops')
-  // D65: the category and its children (Other Consumables → Water Salts, Finings), each with its ingredients.
+  // D65: the category and its children (Other Consumables → Water Salts, Process Aids), each with its ingredients.
   const { category: d65Category, children: d65Children } = keyedCategories(categories, key)
   const grainOptions = hops
     ? hopsCategory

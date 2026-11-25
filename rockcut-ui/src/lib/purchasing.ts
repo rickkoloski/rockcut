@@ -1,7 +1,7 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
 // total and target progress, whole packs (D62 §3.5; sacks for grain), the
 // previous lot (A3) and how a line's lot rows add up.
-import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, isCountUnit, packPlural, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, isCountUnit, packPlural, packSizeNumber, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
 import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -24,7 +24,7 @@ export function money(v: string | number | null | undefined, digits = 2): string
  */
 export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null; pack_note?: string | null }, unit = 'lb'): string {
   // D64: a pack of one that is the unit itself reads "brick · 1 (500 g)", not "brick · 1 bricks".
-  const size = isCountUnit(unit) && Number(o.pack_size) === 1 && packPlural(o.pack_name) === unit ? '1' : `${Number(o.pack_size)} ${unit}`
+  const size = isCountUnit(unit) && Number(o.pack_size) === 1 && packPlural(o.pack_name) === unit ? '1' : `${packSizeNumber(o.pack_size)} ${unit}`
   // D65 (A16): the pack note follows the pack, "tub · 872 tablets (5 lb)".
   if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}${o.pack_note ? ` (${o.pack_note})` : ''}`
   return o.form ? `${size} ${o.form}` : size
