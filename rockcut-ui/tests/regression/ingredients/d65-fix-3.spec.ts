@@ -168,7 +168,7 @@ test('gaps 3, 4: Totals Copy: per-unit Total rows carry no $, the $ total has it
         initial_quantity: quantity,
       },
     })
-  const tabs = await makeD65Product((await makeD65Ingredient('Copy Tabs', 'Finings')).id, 'Tablet', 'each')
+  const tabs = await makeD65Product((await makeD65Ingredient('Copy Tabs', 'Process Aids')).id, 'Tablet', 'each')
   const puree = await makeD65Product((await makeD65Ingredient('Copy Mango', 'fruits')).id, 'Purée', 'gal')
   const tub = await offer(tabs.id, 'tub', '500', '92.00')
   const pail = await offer(puree.id, 'pail', '5', '45.00')

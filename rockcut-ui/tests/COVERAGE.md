@@ -1570,3 +1570,20 @@ Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/i
 | 6261 a voided record with no entries isn't listed; one with entries is | ExUnit `d64_local_qa_test` "D63 (6261)" (2; the first **(revert)**); S0 "6261…" **(revert)** |
 | 6262 one helper (`sumByUnit`) for New order and the order page; tablets too | Vitest `d63Stop0.test.ts` **(revert** to one `each` sum**)**; S0 "6262…" **(revert)** |
 | 5911 S16 steps a week at a time, each week loaded (`openScheduler`) | `d58/sweep` S16 (not provable by revert: the old steps pass locally too) |
+
+**Stop 1 (catalog, §5)**: ExUnit `rockcut_api/migrations/d63_catalog_test` ("MIG": D64's released seeds on a database of its own, the four migrations run for real, then the seeds), `rockcut_api_web/controllers/d63_units_test` ("UNITS"); Vitest `d63Stop1.test.ts` ("V1"); Playwright `regression/ingredients/d63-stop-1.spec.ts` ("S1"; the seeded rows read only).
+
+| Item | Coverage |
+|---|---|
+| §5.1 Finings renamed in any case, by the parent's key; a Process Aids already there stops it; a Finings elsewhere isn't touched; the seeds don't double a lower-case one | MIG "Process Aids" (4) **(revert**: duplicate stop, case, parent key, seed**)**; S1 "lists Whirlfloc T…" |
+| §5.1 `Catalog` knows Process Aids and Finings; g and mL only there (refused on salts, spices, fruit, sugar; kg and ml refused) | UNITS "where g and mL are" **(revert)**; `d65_stop1_test` |
+| §5.1 pack sizes 250 g, 1,000 g, 1,000 mL, 10,000 mL; 10,000.01 refused on offers and lots; usual packs (g bag, mL bottle) | UNITS "pack sizes" **(revert** of each limit and the packs**)**; S1 "a g product…" |
+| §5.1 quantities to 0.01, refusals and counts in g / mL, packs + unit | UNITS "quantities"; V1 |
+| §5.1 order, receive ("2 bags", 500 g), cost per unit, To order, Totals with g and mL subtotals | UNITS "ordered, received…" **(revert)**; V1; S1 "2 bags of zinc…" |
+| §5.1, §5.2 the new rows; an existing row, and EKG with any lot, left alone | MIG "the new rows", "a row already there…" **(revert** of the lot rule**)**; `hop_seeds_test`, `d65_seeds_test`, `grain_seeds_test`; S1 "seeded rows" |
+| §5.3 each value corrected; each changed by hand left and logged; one removed not put back; lots and other makers' products untouched | MIG "values" (5) **(revert**: old-value, none and maker guards**)** |
+| §5.4 the product moves with offer and price; left with a lot, when Anhydrous has one, or when it isn't the seeded one; no second product from the seeds | MIG "calcium chloride" (4) **(revert**: each guard, and the seed**)**; S1 |
+| §5.5 split with movements, alpha, cost and prices; six ways of not being as seeded; renamed by hand; an order or contract line (rename only); the seeds never add a second lot | MIG "Pink Boots" (10) **(revert**: each guard, the copy, `ingredient_id`, the seed**)**; S1 |
+| §5.6 from D64, the seeds twice: the second adds 0, nothing comes back or doubles; an empty database: the migrations do nothing, and its catalog ends the same | MIG "from D64's data" (5) and its `setup` **(revert**: old rows put back in each seed**)** |
+| A top row's actions stay on the right when they wrap | `ui/d52` "the top row" **(revert)** |
+| TaskBoardTest not async ("Database busy") | seed 537802: 9 failed before, 0 after |
