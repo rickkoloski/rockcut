@@ -1609,3 +1609,45 @@ Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/i
 | 360 px: full-width rows, arrows on screen, long-press drag, no sideways scroll | S2 "at 360 px" |
 | a real phone's long-press | **manual-only** |
 | PurchasingSchemasTest not async | item 0b, test code only |
+
+**Stop 3 (brewery settings, the `[SEED]` hop; §6, §9)**: ExUnit `rockcut_api_web/controllers/d63_brewery_settings_test` ("SET"), `rockcut_api/migrations/d63_brewery_settings_test` ("SETMIG": a database of its own, real connections), `seeds/hop_seeds_test` ("HOPS"), `device_route_matrix_test`; Vitest `d63Stop3.test.ts` ("V3"); Playwright `regression/ingredients/d63-stop-3.spec.ts` ("S3"; the one settings row is put back through the API after each test).
+
+| Item | Coverage |
+|---|---|
+| §6.1 the starting values, on the migration's row and on one made by the first read or write; the database takes one row | SET "the row", SETMIG **(revert**: the recreate, a starting value, the check**)** |
+| §6.1 first reads at once make one row | SETMIG **(revert** of `on_conflict`**)** |
+| §6.1 every limit, inclusive, both ends of each; empty, text, comma, exponent; decimals refused, not rounded; the three equations | SET "limits" **(revert** of each**)**; V3; S3 "250, text…" **(revert)** |
+| §6.1 zinc stored per bbl, shown, typed and refused per 8 bbl; zinc and Clarity Ferm kept when not changed | SET "a save"; V3; S3 "equations, and zinc…", "opening and saving…" **(revert** of the scale and of sending every box**)** |
+| §6.2 a stale `lock_version` is 409 with a sentence and the current values; missing refused; checked in `BEGIN IMMEDIATE` | SET "the version", SETMIG "saves at once…" **(revert** of each**)** |
+| §6.2 `updated_by` from the session; nothing different isn't a change | SET "a save" **(revert)** |
+| §6.2, §7 each column: members read, managers and owners edit, others neither; the brewhouse device reads with no code and its PUT is 403 with a manager's; other devices neither | SET "who", the route matrix **(revert** of each `Authz` rule, the PUT's scope and the PUT's check; the GET's own check is behind the `:brewery` scope: not provable alone**)**; S3 |
+| §6.2 the page: groups, both lines, nav, device's nav, no Edit for viewers; everyone else Home; old `/settings` redirects kept | S3, `ui/d52` "nav: …" **(revert)** |
+| §6.2 "Last changed by … on …"; none before anyone has | SET; V3; S3 **(revert)** |
+| §6.2 two editors: the sentence, the current values, the typing kept, Save and Edit still usable | V3; S3 "two editors…" (2) **(revert)** |
+| a double-click on Save writes once (slow network) | S3 (the gate is `FormDialog`'s, not reverted here) |
+| 360 px: no sideways scroll; Back closes Edit and stays on the page | S3 "360 px…" **(revert** of `phone`**)** |
+| §4.4 A9: the switch and the packs / total toggle don't touch each other, kept after a reload | SET "the account's ingredient settings" **(revert)**; S3 "the switch and…" |
+| §9 the `[SEED]` hop: one form, three lots, two makers, one used up, one expired; a second setup is the same; never from the seeds in prod | HOPS **(revert** of each lot's part and the tag**)**; S3 "the [SEED] hop" (read only) |
+| counts that gained the `[SEED]` hop | `grain_seeds_test`, `d65_seeds_test`, `hop_seeds_test`, `d63_catalog_test` |
+
+**§12 → tests** (Stops 0–3)
+
+| Scenario | Test |
+|---|---|
+| Stop 0: Back on Dump brink, Mark clean, Remove pitch; from History → Remove; a confirm that navigates | S0; a real phone's Back gesture: **manual** (Playwright's `goBack()` is a history back) |
+| Stop 0: a voided empty record; 20 bricks and 12 pitchables | S0 "6261…", "6262…" |
+| Use order: received-date order, drag to the top, kept, "In use", same for brewer2 | S2 "the list" |
+| Use order: arrows at 360 px, keyboard | S2 "at 360 px", "the list"; a long-press on a real phone: **manual** (touch is simulated) |
+| Use order: add a lot (end), receive into one (stays) | S2 "a lot added…" |
+| Use order: Record movement "In use order", spill, a lot by hand; Count short and over | S2 "using and counting"; USE "allocation" |
+| Use order: expired skipped; used up hidden, shown per account, back in place | S2 "Hide used-up lots"; S3 "the [SEED] hop" |
+| Use order: two brewers | S2 "two brewers…" |
+| Use order: grain as before; office1 and the device 403; T90 and Cryo apart | USE; S2 |
+| Catalog: Process Aids, zinc ordered, received, counted, subtotals | S1; UNITS |
+| Catalog: EKG, calcium chloride, Pink Boots | S1 (read only); MIG |
+| Catalog: seeds twice; a value edited first is left | MIG |
+| Settings: brewer1 sees, no Edit; breweryMgr 1.5 and "Last changed by"; owner edits | S3 |
+| Settings: two editors | S3 "two editors…" |
+| Settings: 250, text, a comma decimal | S3 "250, text…" |
+| Settings: the brewhouse device; bartender1, office1, a Taproom device | S3; SET "who" |
+| Release: Matt's prod checks (§9) | **manual** (prod) |
