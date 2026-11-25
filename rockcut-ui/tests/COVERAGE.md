@@ -1549,3 +1549,24 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 16 (decisions 8) the closing adjustment isn't before the old record's latest count | LQA "gap 16: … dates past a count" |
 | 25 (decisions 9) Edit, Delete or Remove of a count, entry, lot pitch, brink or strain type that's gone says so in a sentence instead of "Not found", and the screen behind refreshes; a harvest into a deleted brink | LQ "gap 25" (3); LQA "gap 25" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |
+
+## D63: Foundations for recipes
+
+Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/ingredients/d63-stop-0.spec.ts` ("S0") unless named; rows marked **(revert)** were run with the fix reverted and failed.
+
+**Stop 0 (carry-ins, §3)**
+
+| Item | Coverage |
+|---|---|
+| 6260 Back at 360 px closes Dump brink and Mark clean; the next Back leaves the page | S0 "Dump brink and Mark clean…" **(revert)** |
+| 6260 from Brink History, Back closes only Remove / Delete count, then History | S0 "from Brink History…" **(revert)** |
+| 6260 Back does nothing while the confirm is in flight (twice), and nothing is left behind | S0 "while Remove is in flight…" **(revert** of the guard alone**)** |
+| 6260 Remove pitch on the batch page | S0 "Remove pitch on the batch page…" **(revert)** |
+| 6260 Back never runs a second answer (`onCancel`) | S0 "the second answer…" **(revert**; and with Back wired to the answer**)** |
+| 6260 a confirm that deletes and navigates lands there: batch, brand, recipe, ingredient, product, category | S0 "as breweryMgr: deleting (…)" (6) **(revert** fails at the Back step before the landing check**)** |
+| 6260 the Idea card's Discard and Delete for good close the card, which navigates (from the board: `navigate(-1)`; from a link: replace) | `ideas/boards-scenarios` "D63 at 360 px…" (2) **(revert** of `afterBackCloses` alone, and of 6260**)** |
+| 6260 the board's, Daily items' and out-of-service confirms keep one Back entry (their own hooks removed) | S76 tests in `task-board-phone`, `task-board-daily-items`, `production/out-of-service` |
+| 6260 a real phone's Back gesture | **manual-only** (Playwright's `goBack()` is a history back) |
+| 6261 a voided record with no entries isn't listed; one with entries is | ExUnit `d64_local_qa_test` "D63 (6261)" (2; the first **(revert)**); S0 "6261…" **(revert)** |
+| 6262 one helper (`sumByUnit`) for New order and the order page; tablets too | Vitest `d63Stop0.test.ts` **(revert** to one `each` sum**)**; S0 "6262…" **(revert)** |
+| 5911 S16 steps a week at a time, each week loaded (`openScheduler`) | `d58/sweep` S16 (not provable by revert: the old steps pass locally too) |
