@@ -117,6 +117,19 @@ migrations", "Units g and mL", and Risks.
    **twice**: nothing comes back, nothing doubles, and the second run adds 0. Another with each value
    changed by hand first: it's left alone. Another on an empty database.
 8. **COVERAGE:** extend the D63 section.
+9. **The Ingredient Library's top row** (found in Stop 0's full run; its own commit, not from Stop 0). At
+   1440 px as `owner`, the gear loads at x=1376; when Grains' filters arrive, the end group wraps to a
+   second row and sits on the left (x=645, for good). In `PageToolbar` (`components/SettingsMenu.tsx`)
+   the spacer stays on the first row. Make the end group stay on the right when it wraps (`ml: 'auto'` is
+   the likely fix). It may still wrap. Check all seven pages that use it at 1440 and 360 px: nothing else
+   moves. `tests/regression/ui/d52.spec.ts:30` passes only because it measures before the filters load:
+   wait for the settled row (Grains' filters) on /ingredients, assert x as now, and y only where the row
+   doesn't wrap. Prove it by revert.
+
+## Files
+
+Search only inside `~/src/rockcut` and `/tmp/claude-501`. Never `find /` or `find ~`: it sets off macOS
+file-access prompts on Matt's screen.
 
 ## Done when
 
