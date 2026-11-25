@@ -20,7 +20,7 @@ interface CountDialogProps {
 
 /**
  * D60 §3.8: a count. One total by default: a shortfall comes off the oldest
- * lots that aren't expired, an overage goes onto the newest lot. **Count by
+ * lots that aren't expired, an overage goes onto the newest that isn't. **Count by
  * lot**: one box per lot with stock (expired lots included); a box left empty
  * isn't changed. A count that matches on-hand is still saved: the history
  * shows "Counted, no change" (gap 11).

@@ -71,13 +71,13 @@ export const lotChoice = (categoryKey: string | null | undefined) =>
         sort: inUseOrder,
         label: 'In use order',
         helper: "From this product's lots in use order, skipping expired lots",
-        short: "Short: off this product's lots in use order, skipping expired lots. Over: onto the newest lot.",
+        short: "Short: off this product's lots in use order, skipping expired lots. Over: onto the newest lot that isn't expired.",
       }
     : {
         sort: oldestFirst,
         label: 'Oldest first',
         helper: 'From the oldest lots first, skipping expired lots',
-        short: "Short: off the oldest lots that aren't expired. Over: onto the newest lot.",
+        short: "Short: off the oldest lots that aren't expired. Over: onto the newest lot that isn't expired.",
       }
 
 /** D63 §4.4: a use list's lots with stock (Expired included) and its used-up ones, each in order. */

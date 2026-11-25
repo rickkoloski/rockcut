@@ -318,7 +318,7 @@ test.describe('using and counting', () => {
     const lb = async (id: number) => Number((await lotsOf(hop.a.id)).find((l) => l.id === id)!.on_hand)
     for (const [counted, left] of [['21', [11, 10]], ['9', [9, 0]]] as const) {
       const d = await openDialog(page, page.getByTestId('product-count'), 'count-dialog')
-      await expect(d).toContainText("Short: off this product's lots in use order, skipping expired lots. Over: onto the newest lot.")
+      await expect(d).toContainText("Short: off this product's lots in use order, skipping expired lots. Over: onto the newest lot that isn't expired.")
       await d.getByTestId('count-total-lb').fill(counted)
       await save(d)
       await expect(d).toHaveCount(0)
@@ -355,7 +355,7 @@ test.describe('using and counting', () => {
     const older = await makeLot(grain, 2, 20)
     await page.goto(`/ingredients/products/${grain.id}`)
     let d = await openDialog(page, page.getByTestId('product-count'), 'count-dialog')
-    await expect(d).toContainText("Short: off the oldest lots that aren't expired. Over: onto the newest lot.")
+    await expect(d).toContainText("Short: off the oldest lots that aren't expired. Over: onto the newest lot that isn't expired.")
     await d.getByRole('button', { name: 'Cancel' }).click()
     await expect(d).toHaveCount(0)
     d = await openDialog(page, page.getByTestId('product-record-movement'), 'movement-dialog')

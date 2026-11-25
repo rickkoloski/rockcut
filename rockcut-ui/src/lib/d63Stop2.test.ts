@@ -16,13 +16,13 @@ describe('in use order', () => {
   it('only a hop reads and sorts so; grain, yeast and the rest keep Oldest first', () => {
     expect(lotChoice('hops')).toMatchObject({ label: 'In use order', sort: inUseOrder })
     expect(lotChoice('hops').helper).toBe("From this product's lots in use order, skipping expired lots")
-    expect(lotChoice('hops').short).toContain('in use order')
+    expect(lotChoice('hops').short).toBe("Short: off this product's lots in use order, skipping expired lots. Over: onto the newest lot that isn't expired.")
     for (const key of ['grains', 'yeast', 'fruits', 'consumables', null, undefined]) {
       expect(lotChoice(key)).toEqual({
         sort: oldestFirst,
         label: 'Oldest first',
         helper: 'From the oldest lots first, skipping expired lots',
-        short: "Short: off the oldest lots that aren't expired. Over: onto the newest lot.",
+        short: "Short: off the oldest lots that aren't expired. Over: onto the newest lot that isn't expired.",
       })
     }
   })
