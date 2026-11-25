@@ -202,3 +202,76 @@ you take, and say so.
 
 **Reply with** commits, counts (with seeds), rule → test (which you proved by revert), the item 1 list, and
 `LEAD:` notes.
+
+---
+
+# Stop 3 (Brewery settings, `[SEED]` hop, COVERAGE)
+
+2026-11-25 · lead. **Stop 2 reviewed and accepted** (`f5787f4` … `3204d0d`), all your LEAD notes included.
+Full local Playwright on Stops 1 and 2: 1,056 passed, 1 skipped, 0 failed. This file, the spec and the plan
+are all you need. The Stop 0 section's "Where and how" and the Stop 1 section's "Files" and "Rules for this
+stop" still apply.
+
+## Read first
+
+Spec §6 (all), §7, §8, §9, A6/A7 in §10, and §12 "Settings". Plan: "Brewery settings", "Permissions" under
+"Where things are", and Risks.
+
+## Do
+
+1. **Data** (§6.1): `brewery_settings`, one row, created by its migration with the starting values and
+   recreated with them on first read if missing. Two first reads at once must not make two rows. The
+   migration comes after `20261124120006`. Every limit in the table is inclusive and enforced by the API.
+   Zinc is **stored per bbl** (0.09375) and **shown and edited per 8 bbl** (0.75): its limits apply to the
+   stored value, and the screen's refusal names them in the screen's unit. Opening and saving without
+   changing zinc or Clarity Ferm must not change what is stored.
+2. **API** (§6.2): `GET` and `PUT /api/brewery_settings`. A stale `lock_version` is 409 with a sentence and
+   the current values. A missing `lock_version` is refused, not treated as current. The version is checked
+   in the write itself. `updated_by` comes from the session, never from the body.
+3. **Permissions** (§6.2, §7): Authz `:brewery_settings`, `:read` and `:manage`, the same member and manager
+   rules as `:yeast_settings`. The brewhouse device gets `:read` on its allowlist, with no staff code for
+   the GET; its PUT is 403 even when a Brewery manager's staff code is sent. Every other device is refused
+   both. Extend the D31 boundary/parity suite and cover each column of §7.
+4. **Page** (§6.2): `/brewery/settings`, in the Brewery nav and `DEVICE_PAGES`. Check that the route is
+   reachable on the brewhouse device: the Brewery routes are under `hasBrewery` in `App.tsx`. Everyone else's
+   URL goes Home. **Don't disturb the old `/settings` redirects.** Groups, "Last changed by … on …", and the
+   two lines at the top as the spec words them. Before anyone has changed it, show no "Last changed" line.
+   - A refused value keeps the form open with what was typed and a sentence giving the limits. Empty, text
+     and a comma decimal are refused.
+   - On a 409 nobody's typing is lost silently: the sentence, the current values, and Edit still usable.
+   - Phones: 360 px has no sideways scroll; Back and leaving the page with unsaved edits behave as the
+     app's other edit forms do. Say which one you followed.
+   - Slow network: a double-click on Save writes once.
+   - Nothing else reads these values in D63.
+5. **Account settings check** (Stop 2 follow-up): saving only `hide_used_up_lots` leaves
+   `quantity_display` as it was, and the reverse. ExUnit, plus a Playwright check that both survive a reload.
+6. **`[SEED]` hop** (§9): in `seeds/synthetic.ex`, a hop variety with one form and **three lots from two
+   makers**: one used up, one expired, one with stock and not expired. Read how the other `[SEED]` rows are
+   made and follow it (repeat runs add nothing and repair nothing they shouldn't). **Synthetic data only:
+   nothing in `Release.seed/0` may create it.** Pick a date far enough off that the expired lot is always
+   expired and the good lot never is. Check every spec that counts, totals or lists hops, lots, products or
+   companies, since new rows change those numbers; fix the specs' expectations only where the new rows are
+   the cause, and list each one.
+   Then add a read-only Playwright spec on it (the list, "In use" on the right lot, the expired one skipped,
+   Used up behind the switch). Tests don't move, count or reorder it: those stay on `[TEST-TEMP]` hops.
+7. **Tests and COVERAGE:** every rule gets a refusal test and an allowed test; Playwright for §12 "Settings".
+   There is one settings row and it is shared, so a spec that edits it restores the starting values by the
+   API afterwards even when it fails, and doesn't run alongside another that reads them. Finish the D63
+   section of COVERAGE: every §12 line for Stops 0–3 maps to a test, or says "manual" and why (long-press
+   on a real phone is one).
+
+## Rules
+
+- **Ask me before landing or running the migration on the dev database.** I back up, run and seed.
+- Build and prove on a scratch copy while I'm not running Playwright, as in Stop 2.
+- **No disk-wide searches** (`find /`, `find ~`). Search only `~/src/rockcut` and `/tmp/claude-501`.
+- Don't start Playwright after 23:00 or run it across midnight.
+
+## Done when
+
+As Stop 1 (ExUnit twice, warnings-as-errors, vitest, `tsc`, `vite build`, the same 8 lint errors), plus a
+browser check at desktop and 360 px as `brewer1`, `breweryMgr`, `owner`, the brewhouse device and
+`bartender1`. Look at every screenshot you take, and say so. **I run the full suite.**
+
+**Reply with** commits, counts (with seeds), rule → test (which you proved by revert), item 6's list of
+changed specs, and `LEAD:` notes for anything the spec didn't decide.
