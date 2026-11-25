@@ -7,7 +7,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, lotPack, minQuantity, productPack, productShortName } from '../../lib/brewingUnits'
-import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
+import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, lotChoice as choiceFor, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement, MovementKind, Party } from '../../lib/types'
 import { unitLabel } from '../../lib/ingredientFeatures'
@@ -25,6 +25,7 @@ interface MovementDialogProps {
  * D60 §4.5, §3.8: use, trade, loan or receive stock. Outgoing kinds default
  * to **Oldest first** (the API takes it from the oldest lots that aren't
  * expired); a brewer can pick one lot instead, an expired one included.
+ * A hop's default is **In use order** (D63 §4.4).
  * Trades and loans name the partner brewery.
  */
 export default function MovementDialog(props: MovementDialogProps) {
@@ -45,8 +46,10 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
 
   const outgoing = OUTGOING.includes(kind)
   const sorted = [...lots].sort(oldestFirst)
+  // D63 §4.4: a hop's lots go out in use order.
+  const auto = choiceFor(product.category_key)
   // Out: the lots with stock. In: any lot, newest first.
-  const choices = outgoing ? sorted.filter((l) => Number(l.on_hand ?? 0) > 0) : [...sorted].reverse()
+  const choices = outgoing ? [...lots].sort(auto.sort).filter((l) => Number(l.on_hand ?? 0) > 0) : [...sorted].reverse()
   const lot = lots.find((l) => String(l.id) === lotChoice) ?? null
   const pack = lot ? lotPack(lot) : productPack(product.offers, lots)
   const partners = parties.filter((p) => p.roles?.includes('partner_brewery') && p.active)
@@ -128,14 +131,14 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
       <FormControl fullWidth>
         <InputLabel id="movement-lot-label">Lot</InputLabel>
         <Select labelId="movement-lot-label" id="movement-lot" label="Lot" value={lotChoice} onChange={(e) => setLotChoice(e.target.value)} data-testid="movement-lot">
-          {outgoing && <MenuItem value={OLDEST}>Oldest first</MenuItem>}
+          {outgoing && <MenuItem value={OLDEST}>{auto.label}</MenuItem>}
           {choices.map((l) => (
             <MenuItem key={l.id} value={String(l.id)}>
               {lotLabel(l)}
             </MenuItem>
           ))}
         </Select>
-        {outgoing && lotChoice === OLDEST && <FormHelperText>From the oldest lots first, skipping expired lots</FormHelperText>}
+        {outgoing && lotChoice === OLDEST && <FormHelperText>{auto.helper}</FormHelperText>}
       </FormControl>
       {needsPartner && (
         // Not `required` on the control: the browser would stop the form before the app's message (lead decisions 1, item 2).

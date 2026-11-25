@@ -11,6 +11,7 @@ import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
 import { categoryKey, ionsText, isManagedKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
 import ProductDialog from './ProductDialog'
+import UseOrderSection from './UseOrderSection'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
@@ -221,6 +222,8 @@ export default function IngredientDetail() {
               </List>
             )}
           </Paper>
+          {/* D63 §4.4: which lot is used next. */}
+          {key === 'hops' && <UseOrderSection ingredientId={ingredientId} />}
         </>
       ) : (
       <>

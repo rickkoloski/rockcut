@@ -170,7 +170,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       )}
       <FormControlLabel
         control={<Switch checked={expired} onChange={(e) => setExpired(e.target.checked)} data-testid="lot-expired" />}
-        label="Expired (stale or damaged: oldest first skips it)"
+        label={`Expired (stale or damaged: ${hops ? 'the use order' : 'oldest first'} skips it)`}
       />
       {hops ? (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={loading} />

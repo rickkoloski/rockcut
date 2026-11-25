@@ -81,7 +81,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
 
   const updateIngredient = useApiUpdate<Ingredient>(
     (id) => `/api/ingredients/${id}`,
-    { invalidateKeys: [['ingredients'], ['ingredient', ingredient?.id], ['ingredient_products'], ['yeast_strain_types']] }
+    { invalidateKeys: [['ingredients'], ['ingredient', ingredient?.id], ['ingredient_products'], ['hop_use_lists'], ['ingredient_lots'], ['yeast_strain_types']] }
   )
 
   const handleSubmit = async () => {
