@@ -30,7 +30,7 @@
 - **Domain review needed:** Yes — Matt could provide a real recipe for seed data
 
 ### DR-4: Unit handling edge cases (pkg/each)
-- **Status:** **Claimed** by D62 (inventory units: products keep one unit, `inventory_on_hand` returns `{value, unit}` and refuses an ingredient whose products are in different units) and D63 (recipe units: oz ↔ lb, salts in oz, recipe lines on products)
+- **Status:** **Claimed** by D62 (inventory units: products keep one unit, `inventory_on_hand` returns `{value, unit}` and refuses an ingredient whose products are in different units) and D68 (moved from D63, 2026-11-24; recipe units: oz ↔ lb, salts in oz, recipe lines on products)
 - **Source:** D6 (Formula Execution Service)
 - **What was spec'd:** Not explicitly specified
 - **What shipped:** Unknown units passthrough as raw values; mitigated by category filtering
