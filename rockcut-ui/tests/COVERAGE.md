@@ -1587,3 +1587,25 @@ Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/i
 | §5.6 from D64, the seeds twice: the second adds 0, nothing comes back or doubles; an empty database: the migrations do nothing, and its catalog ends the same | MIG "from D64's data" (5) and its `setup` **(revert**: Finings, Hydrous's product, DME, Pilsner moisture put back**)** |
 | A top row's actions stay on the right when they wrap | `ui/d52` "the top row" **(revert)** |
 | TaskBoardTest not async ("Database busy") | seed 537802: 9 failed before, 0 after |
+| Stop 2 item 0a: at 360 px the top row's actions are where they were before 17c166a on all seven pages; at 1440 px as Stop 1 left them | `ui/d52` "the top row at 360 px…" **(revert** to `ml: 'auto'` at every width**)**, "the top row…" **(revert** of the margin**)** |
+
+**Stop 2 (hop use lists, §4)**: ExUnit `rockcut_api_web/controllers/d63_use_order_test` ("USE"), `rockcut_api/migrations/d63_catalog_test` "the use order's backfill" ("BACK"; D64's fixtures), `device_route_matrix_test`, `authz_parity/brewing_test`; Vitest `d63Stop2.test.ts` ("V2"), `saveQueue.test.ts` ("Q"); Playwright `regression/ingredients/d63-stop-2.spec.ts` ("S2", its own `[TEST-TEMP]` hops).
+
+| Item | Coverage |
+|---|---|
+| §4.1 backfill: received date, crop year, id; per variety and form, across makers; by key, children too; a placed lot kept, a rerun adds at the end; an empty database | BACK (3) **(revert** of each**)** |
+| §4.1 a new lot is max + 1 in its own write: Add lot, receiving, `Brewing.create_ingredient_lot`, the hop and D63 seeds; four at once; none outside Hops; not settable | USE "a lot's place"; BACK; S2 "a lot added…" **(revert** of each path but the synthetic seed, whose lots aren't hops**)** |
+| §4.1 changes of list: a lot's product, a product's ingredient, an ingredient's category; a product's form stays fixed; another maker's same form doesn't move | USE "a lot's place" **(revert** of each**)**; S2 "a product moved to another hop…" |
+| §4.1 receiving into, counting, using and expiring move nothing; a lot at 0 keeps its place | USE **(revert** of the place kept at 0; the rest has no code to revert**)**; S2 "a lot added…", "hidden by default…" |
+| §4.2 GET; a null position crashes nothing; `Inventory.use_order` | USE "reading" **(revert)** |
+| §4.2 PUT: 422 for a foreign, repeated, missing, unknown or used-up lot and bad params; gaps kept, shared or null places numbered | USE "reordering" **(revert)** |
+| §4.2 `version`: 409 when a lot was reordered, added, used up, back or deleted; two at once; not for an edit or a partial use | USE **(revert** of the check and of the stock part; the positions in the hash are not provable alone, the order is in it too**)**; S2 "brewer2 moves from a stale list", "a lot added / used up meanwhile" **(revert** of the refetch**)** |
+| §4.3 outgoing kinds and count shortfalls in use order, that maker's lots only, Expired skipped; overages and "no change" on the newest by date then id; grain and yeast unchanged | USE "allocation" **(revert** of each: use order, every category, last of the list, id only, the tie, all expired**)**; S2 "using and counting" |
+| §4.4 drag, arrows, keyboard; In use; T90 and Cryo apart; same for brewer2 | S2 "the list"; V2 **(revert**: In use and Expired**)** |
+| §4.4 Record movement and Count wording, hops only (the lot dialog's Expired too) | S2, V2 **(revert** both ways**)** |
+| §4.4 Hide used-up lots: per account, default on, Hops list and hop page; a failed save says so | USE, V2, S2 "Hide used-up lots" **(revert)** |
+| A second move before the first save answers; a failed save puts the old order back | Q, S2 "two brewers, and a slow or broken network" **(revert**: the queue, the hold, the reset, the version carried, the waiting save**)** |
+| §7 Brewery members, managers, owners; office1, bartenders, every device 403 | USE "who", the matrix and parity suites, S2 "office1…" (the controller's own `Authz` check is behind the `:brewery` scope: not provable by revert) |
+| 360 px: full-width rows, arrows on screen, long-press drag, no sideways scroll | S2 "at 360 px" |
+| a real phone's long-press | **manual-only** |
+| PurchasingSchemasTest not async | item 0b, test code only |
