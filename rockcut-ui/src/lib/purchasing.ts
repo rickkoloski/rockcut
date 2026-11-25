@@ -55,6 +55,17 @@ export const amountText = (quantity: string | number, unit: string) =>
 export const byUnitText = (byUnit: UnitQuantity[]) => byUnit.map((u) => amountText(u.quantity, u.unit_label ?? u.unit)).join(' · ')
 
 /**
+ * D63 (6262): the quantity per unit as an order counts it, by the units'
+ * own words, so bricks and pitchables (both `each`) stay apart. New order's
+ * running total and the order page both read it.
+ */
+export function sumByUnit(rows: { unit: string; quantity: number }[]): UnitQuantity[] {
+  const units = new Map<string, number>()
+  for (const r of rows) units.set(r.unit, (units.get(r.unit) ?? 0) + r.quantity)
+  return [...units.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+}
+
+/**
  * The one pack name a set of lines shares ("sack" on a grain-only order),
  * else null: the words then say "packs" (D62 §3.5, A5).
  */
@@ -94,23 +105,19 @@ export interface DraftLine {
 export function runningTotal(lines: DraftLine[], emptyPack: string | null = 'sack'): { packs: number; byUnit: UnitQuantity[]; dollars: number; text: string } {
   let packs = 0
   let cents = 0
-  const units = new Map<string, number>()
+  const rows: { unit: string; quantity: number }[] = []
   const names: (string | null | undefined)[] = []
   for (const l of lines) {
     // D65 lead decisions 3 (gap 6): a line with its offer but no packs yet
     // counts as 0 of its pack and unit ("0 pails · 0 gal"), never "0 sacks".
     if (l.packSize == null) continue
-    const unit = l.unit ?? 'lb'
     const n = l.packs ?? 0
     packs += n
     names.push(l.packName ?? 'sack')
-    units.set(unit, (units.get(unit) ?? 0) + n * l.packSize)
+    rows.push({ unit: l.unit ?? 'lb', quantity: n * l.packSize })
     if (l.price != null) cents += Math.round(n * l.price * 100)
   }
-  if (units.size === 0) units.set('lb', 0)
-  const byUnit = [...units.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+  const byUnit = sumByUnit(rows.length ? rows : [{ unit: 'lb', quantity: 0 }])
   const dollars = cents / 100
   const packText = `${packs.toLocaleString('en-US')} ${packWord(names.length ? sharedPackName(names) : emptyPack, packs)}`
   return { packs, byUnit, dollars, text: `${packText} · ${byUnitText(byUnit)} · ${money(dollars)}` }

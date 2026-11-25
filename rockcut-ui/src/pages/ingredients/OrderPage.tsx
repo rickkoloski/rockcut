@@ -28,8 +28,9 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { byUnitText, money, offerPackText, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { byUnitText, money, offerPackText, sharedPackName, sumByUnit, targetProgress } from '../../lib/purchasing'
 import { packWord } from '../../lib/brewingUnits'
+import { unitLabel } from '../../lib/ingredientFeatures'
 import type { ApiResponse, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import ReceiveDialog from './ReceiveDialog'
@@ -214,7 +215,7 @@ export default function OrderPage() {
       </Paper>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' }}>
         <Typography fontWeight={600} data-testid="order-totals">
-          {order.total_packs} {packWord(orderPack, order.total_packs)} · {byUnitText(order.by_unit)} · {money(order.total_dollars)}
+          {order.total_packs} {packWord(orderPack, order.total_packs)} · {byUnitText(sumByUnit(order.lines.map((l) => ({ unit: unitLabel(l.offer.product), quantity: Number(l.line_quantity) }))))} · {money(order.total_dollars)}
           {received && ' received'}
         </Typography>
         {progress && isOpen && (
