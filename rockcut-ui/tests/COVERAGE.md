@@ -1651,3 +1651,13 @@ Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/i
 | Settings: 250, text, a comma decimal | S3 "250, text…" |
 | Settings: the brewhouse device; bartender1, office1, a Taproom device | S3; SET "who" |
 | Release: Matt's prod checks (§9) | **manual** (prod) |
+
+**Fix cycle 1 (local QA)**: Vitest `d63Fix1.test.ts` ("VF1"), `d63Stop2.test.ts` ("V2"); Playwright `regression/ingredients/d63-fix-1.spec.ts` ("F1", 1366 and 360 px).
+
+| Item | Coverage |
+|---|---|
+| Gap 1: Count says the extra goes onto the newest lot that isn't expired (hops, and the rest) | V2 "only a hop reads…" **(revert** of each**)**; S2 "Count…", "a grain still says…" |
+| Gap 3: Back after deleting a product, ingredient, batch, brand, recipe or category says not found (an order can't be deleted) | F1 "Back after deleting (…)" (12) **(revert)** |
+| Gap 3: the page isn't read again, and doesn't say not found, on its way out | F1 the same **(revert** of the skipped refetch on product; of the wait on brand**)**; VF1 "waits until…", "stops watching…" **(revert)** |
+| Gap 3: a row someone else deletes keeps the open form, though its read answers 404 | F1 "a product someone else deletes…" (2) **(revert)** |
+| Gap 4: the pack note's example: tablets and other counts, and a brick; none on weights, volumes, pitchables or cases of them | VF1 "the pack note hint" **(revert)** |
