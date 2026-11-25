@@ -8,6 +8,7 @@ import type { Ingredient, IngredientCategory } from '../../lib/types'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import FormDialog from '../../components/FormDialog'
+import { saveRefused } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { useStrainTypes } from '../../hooks/useStrainTypes'
 
@@ -109,7 +110,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
       if (salts) for (const key of [['ingredient', saved.id], ['ingredient_products'], ['ingredient_product']]) await qc.invalidateQueries({ queryKey: key })
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      setError(ingredient ? saveRefused(err, noun.toLowerCase()) : parseApiError(err))
     }
   }
 

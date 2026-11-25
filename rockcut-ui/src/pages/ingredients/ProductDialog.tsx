@@ -9,7 +9,7 @@ import RangeFields from './RangeFields'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { httpStatus } from '../../lib/notFound'
+import { httpStatus, saveRefused } from '../../lib/notFound'
 import {
   HOP_FORMS,
   draftsFrom,
@@ -252,7 +252,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
       // Decisions 4: Save and Cancel stay busy until the refetch lands, so a
       // quick close and reopen can't pick up the old version (a second 409).
       if (httpStatus(err) === 409) await refreshAfterConflict(qc)
-      setError(parseApiError(err))
+      setError(product ? saveRefused(err, 'product') : parseApiError(err))
     }
   }
 

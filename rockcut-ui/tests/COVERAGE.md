@@ -1661,3 +1661,10 @@ Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/i
 | Gap 3: the page isn't read again, and doesn't say not found, on its way out | F1 the same **(revert** of the skipped refetch on product; of the wait on brand**)**; VF1 "waits until…", "stops watching…" **(revert)** |
 | Gap 3: a row someone else deletes keeps the open form, though its read answers 404 | F1 "a product someone else deletes…" (2) **(revert)** |
 | Gap 4: the pack note's example: tablets and other counts, and a brick; none on weights, volumes, pitchables or cases of them | VF1 "the pack note hint" **(revert)** |
+
+**Fix cycle 2 (local QA recheck 1)**: Playwright `regression/ingredients/d63-fix-2.spec.ts` ("F2").
+
+| Item | Coverage |
+|---|---|
+| Saving a product (1366 and 360 px), ingredient, offer or lot (both lot dialogs) someone else deleted says "This … was deleted, so it can't be saved."; the dialog and the typing stay | F2 (6) **(revert)** |
+| A missing supplier, maker, ingredient, category, strain type or product named in those saves is a 422, so it never reads as the row being deleted | F2 "a missing supplier…" (the API's own answers; nothing to revert) |

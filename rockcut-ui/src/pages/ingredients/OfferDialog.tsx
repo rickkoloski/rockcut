@@ -4,6 +4,7 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
+import { saveRefused } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, packSizeLabel, parseDecimal, unitDecimals } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
@@ -89,7 +90,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       else await create.mutateAsync(payload)
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      setError(offer ? saveRefused(err, 'offer') : parseApiError(err))
     }
   }
 
