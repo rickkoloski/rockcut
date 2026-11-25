@@ -31,6 +31,20 @@ export function offerPackText(o: { pack_name: string; pack_size: string | number
 }
 
 /**
+ * The pack note's hint: the pack as the saved offer will read (D64 lead
+ * decisions 6, "brick · 1 (500 g)"). Before a note is typed, an example where
+ * a pack's count doesn't say its weight (D63): tablets and other counts, and
+ * a brick; none on a weight or a volume, a pitchable or a case of either.
+ */
+export function packNoteHelper(o: { pack_name: string; pack_size: string | number | null; pack_note: string }, unit: string): string {
+  const example = unit === 'bricks' ? (o.pack_name === 'brick' ? '500 g' : '') : isCountUnit(unit) && unit !== 'pitchables' ? '5 lb' : ''
+  const pack_note = o.pack_note.trim() || example
+  if (!pack_note) return 'Optional, shown with the pack'
+  const pack = o.pack_size ? offerPackText({ ...o, pack_size: o.pack_size, pack_note }, unit) : `${o.pack_name} · … ${unit} (${pack_note})`
+  return `Optional, shown with the pack: "${pack}"`
+}
+
+/**
  * To order's offer (D62 decisions 2, gap 15): a hop box reads "box · 11 lb"
  * as on the order and Add lot pickers; a sack reads "50 lb" as in D61.
  */
