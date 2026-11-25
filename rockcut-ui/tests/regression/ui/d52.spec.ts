@@ -112,9 +112,12 @@ test.describe('owner', () => {
     await expect(drawer.getByRole('button', { name: 'Production' })).toHaveCount(0)
   })
 
-  test('nav: Brewery has no Settings; old /settings links land on the ingredient categories', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator('.MuiDrawer-paper').first().getByText('Settings', { exact: true })).toHaveCount(0)
+  test("nav: Brewery's Settings is the brewery's (D63); old /settings links land on the ingredient categories", async ({ page }) => {
+    await page.goto('/brewery/production')
+    const settings = page.locator('.MuiDrawer-paper').first().getByText('Settings', { exact: true })
+    await expect(settings).toHaveCount(1)
+    await settings.click()
+    await expect(page).toHaveURL(/\/brewery\/settings$/)
     await page.goto('/settings')
     await expect(page).toHaveURL(/\/ingredients\/categories$/)
     await page.goto('/settings/categories/1')
