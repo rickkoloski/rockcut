@@ -56,6 +56,31 @@ test.describe('owner', () => {
     expect(spots.filter((s) => s.wraps && s.path !== '/ingredients')).toEqual([])
   })
 
+  // D63 Stop 2: the wrapped row stays on the right from `sm` up only. At 360 px a
+  // row sits where it does with no margin on its actions, and Brands' are on the left.
+  test('the top row at 360 px: no page moves its actions to the right; Brands starts at the left edge', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 })
+    for (const { path, gear } of PAGES) {
+      await page.goto(path)
+      const g = page.getByTestId(gear)
+      await expect(g).toBeVisible({ timeout: 20_000 })
+      if (path === '/ingredients') {
+        for (const id of ['grains-maltster', 'grains-on-hand-only', 'quantity-toggle']) await expect(page.getByTestId(id)).toBeVisible({ timeout: 20_000 })
+      }
+      const { shown, plain, row } = await g.evaluate((el) => {
+        const end = el.parentElement!
+        const box = () => Math.round(end.getBoundingClientRect().x)
+        const shown = box()
+        end.style.marginLeft = '0'
+        const plain = box()
+        end.style.marginLeft = ''
+        return { shown, plain, row: Math.round(end.parentElement!.getBoundingClientRect().x) }
+      })
+      expect(shown, path).toBe(plain)
+      if (path === '/brands') expect(shown, path).toBe(row)
+    }
+  })
+
   test('collapsed nav: a section opens its pages as icons below it; the rail stays narrow; hover names them', async ({ page }) => {
     await page.goto('/')
     const drawer = page.locator('.MuiDrawer-paper').first()
