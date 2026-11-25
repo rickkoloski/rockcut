@@ -176,6 +176,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/ingredient_lots/:id"},
     {:put, "/api/ingredient_lots/:id"},
     {:delete, "/api/ingredient_lots/:id"},
+    # D63 §4.2: a hop's use order: no device.
+    {:get, "/api/hop_use_lists"},
+    {:put, "/api/hop_use_lists/order"},
     # D60 grain catalog and inventory: no device (spec decision 12).
     {:get, "/api/parties"},
     {:get, "/api/parties/:id"},

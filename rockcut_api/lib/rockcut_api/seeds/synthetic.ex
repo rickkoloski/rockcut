@@ -99,7 +99,8 @@ defmodule RockcutApi.Seeds.Synthetic do
     Product,
     PurchaseOrder,
     PurchaseOrderLine,
-    SupplierOffer
+    SupplierOffer,
+    UseOrder
   }
 
   alias RockcutApi.BeerBoard.Entry
@@ -1235,7 +1236,7 @@ defmodule RockcutApi.Seeds.Synthetic do
         size = Decimal.new(55)
 
         lot =
-          Repo.insert!(%IngredientLot{
+          UseOrder.insert_lot!(%IngredientLot{
             ingredient_id: product.ingredient_id,
             product_id: product.id,
             supplier_party_id: bsg.id,
@@ -1328,7 +1329,7 @@ defmodule RockcutApi.Seeds.Synthetic do
           received = Date.add(today, -10)
 
           lot =
-            Repo.insert!(%IngredientLot{
+            UseOrder.insert_lot!(%IngredientLot{
               ingredient_id: ingredient.id,
               product_id: product.id,
               supplier_party_id: bsg.id,
@@ -1474,7 +1475,7 @@ defmodule RockcutApi.Seeds.Synthetic do
           received = Date.add(today, -10)
 
           lot =
-            Repo.insert!(%IngredientLot{
+            UseOrder.insert_lot!(%IngredientLot{
               ingredient_id: ingredient.id,
               product_id: product.id,
               supplier_party_id: parties[supplier].id,

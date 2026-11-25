@@ -24,6 +24,7 @@ defmodule RockcutApi.Ingredients.Products do
     Product,
     Reorder,
     SupplierOffer,
+    UseOrder,
     Versions
   }
 
@@ -113,17 +114,23 @@ defmodule RockcutApi.Ingredients.Products do
           version = Versions.given!(attrs)
           product = Product |> Repo.get!(product.id) |> Versions.check!(version, "product")
 
+          # D63 §4.1: its lots may join another use list, or leave Hops.
           updated =
-            product
-            |> Product.changeset(attrs, key)
-            |> Versions.bump()
-            |> Repo.update()
-            |> rollback_on_error()
+            UseOrder.keep(UseOrder.lot_ids(product), fn ->
+              updated =
+                product
+                |> Product.changeset(attrs, key)
+                |> Versions.bump()
+                |> Repo.update()
+                |> rollback_on_error()
 
-          if updated.ingredient_id != product.ingredient_id do
-            from(l in IngredientLot, where: l.product_id == ^product.id)
-            |> Repo.update_all(set: [ingredient_id: updated.ingredient_id])
-          end
+              if updated.ingredient_id != product.ingredient_id do
+                from(l in IngredientLot, where: l.product_id == ^product.id)
+                |> Repo.update_all(set: [ingredient_id: updated.ingredient_id])
+              end
+
+              updated
+            end)
 
           Features.write!({:product, product.id}, features)
           drop_other_form_features!(product.id, updated.form)

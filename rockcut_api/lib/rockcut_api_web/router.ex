@@ -220,6 +220,9 @@ defmodule RockcutApiWeb.Router do
     get "/ingredients/:id/ions", IngredientController, :ions
     put "/ingredients/:id/ions", IngredientController, :put_ions
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
+    # D63 §4.2: which hop lot is used next.
+    get "/hop_use_lists", HopUseListController, :index
+    put "/hop_use_lists/order", HopUseListController, :order
 
     # D60 grain catalog and inventory
     resources "/parties", PartyController, except: [:new, :edit]

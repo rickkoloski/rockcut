@@ -23,7 +23,8 @@ alias RockcutApi.Ingredients.{
   Party,
   PartyRole,
   Product,
-  SupplierOffer
+  SupplierOffer,
+  UseOrder
 }
 
 # ── Companies ───────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ new_lots =
     0
   else
     lot =
-      Repo.insert!(%IngredientLot{
+      UseOrder.insert_lot!(%IngredientLot{
         ingredient_id: ekg,
         product_id: ekg_product,
         supplier_party_id: party_ids["Lupulin Exchange"],

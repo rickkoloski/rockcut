@@ -2,13 +2,14 @@ defmodule RockcutApi.AuthzParity.BrewingTest do
   @moduledoc """
   D31 parity — D29 Appendix A row 41 (the `:brewery` route pipeline). Any
   Brewery member, of any role, or an owner has full access; everyone else is 403.
+  D63 §7: a hop's use order too (its PUT's matrix: `D63UseOrderTest`).
   Row 42 (the Brewing `can?/3` clause) has no callers.
   """
   use RockcutApiWeb.ConnCase
 
   import RockcutApi.PersonaFixtures
 
-  @paths ~w(/api/brands /api/recipes /api/ingredients /api/ingredient_categories /api/batches /api/formulas/catalog)
+  @paths ~w(/api/brands /api/recipes /api/ingredients /api/hop_use_lists?ingredient_id=1 /api/ingredient_categories /api/batches /api/formulas/catalog)
 
   setup do
     %{p: personas()}

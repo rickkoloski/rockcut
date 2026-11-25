@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing do
   import Ecto.Query
   alias RockcutApi.Repo
+  alias RockcutApi.Ingredients.UseOrder
 
   alias RockcutApi.Brewing.{
     IngredientCategory,
@@ -208,9 +209,10 @@ defmodule RockcutApi.Brewing do
   end
 
   def update_ingredient(%Ingredient{} = ingredient, attrs) do
+    # D63 §4.1: moved into or out of Hops, its lots join or leave a use list.
     ingredient
-    |> Ingredient.changeset(attrs)
-    |> Repo.update()
+    |> UseOrder.lot_ids()
+    |> keep_use_order(fn -> ingredient |> Ingredient.changeset(attrs) |> Repo.update() end)
     |> preload_on_ok(:category)
   end
 
@@ -284,15 +286,21 @@ defmodule RockcutApi.Brewing do
   def create_ingredient_lot(attrs) do
     %IngredientLot{}
     |> IngredientLot.changeset(attrs)
-    |> Repo.insert()
+    |> UseOrder.insert_lot()
     |> preload_on_ok(@lot_with_category)
   end
 
   def update_ingredient_lot(%IngredientLot{} = lot, attrs) do
-    lot
-    |> IngredientLot.changeset(attrs)
-    |> Repo.update()
+    [lot.id]
+    |> keep_use_order(fn -> lot |> IngredientLot.changeset(attrs) |> Repo.update() end)
     |> preload_on_ok(@lot_with_category)
+  end
+
+  defp keep_use_order(lot_ids, fun) do
+    {:ok, result} =
+      Repo.transaction(fn -> UseOrder.keep(lot_ids, fun) end, mode: :immediate)
+
+    result
   end
 
   def delete_ingredient_lot(%IngredientLot{} = lot) do

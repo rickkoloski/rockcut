@@ -35,7 +35,8 @@ alias RockcutApi.Ingredients.{
   PartyRole,
   Product,
   ProductFeatureValue,
-  SupplierOffer
+  SupplierOffer,
+  UseOrder
 }
 
 parties = [
@@ -278,7 +279,7 @@ new_lots =
         made
       else
         lot =
-          Repo.insert!(%IngredientLot{
+          UseOrder.insert_lot!(%IngredientLot{
             ingredient_id: hop_ids[variety],
             product_id: product_id,
             supplier_party_id: party_ids[company],

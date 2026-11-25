@@ -1,6 +1,6 @@
 defmodule RockcutApi.Migrations.D63CatalogTest do
   @moduledoc """
-  D63 §5: the four catalog migrations and the seeds, run for real on a
+  D63 §5, and §4.1's backfill of the use order: the migrations and the seeds, run for real on a
   database file of its own (as `D65ProductsAndCategoriesTest`). It starts
   from D64's data: the seeds as D64 released them (`test/support/fixtures/
   d64_seeds`), run before the D63 migrations.
@@ -23,6 +23,9 @@ defmodule RockcutApi.Migrations.D63CatalogTest do
   @moduletag :capture_log
 
   @versions [20_261_124_120_001, 20_261_124_120_002, 20_261_124_120_003, 20_261_124_120_004]
+  # Stop 2's backfill of the use order (its `down` does nothing: the column
+  # stays, since D64's seeds insert today's lot schema).
+  @backfill 20_261_124_120_006
   @now "2026-11-23T12:00:00Z"
 
   # {ingredient, maker, feature, old, new, high}
@@ -848,6 +851,138 @@ defmodule RockcutApi.Migrations.D63CatalogTest do
         assert [["Pink Boots '23", _, 8.5], ["Pink Boots '23", _, 2.9]] = pink()
         assert hop("Pink Boots '24") == []
       end
+    end
+  end
+
+  # {hop, form, lot number, crop year, received, position}, in each list's order.
+  defp use_lists do
+    rows("""
+    SELECT i.name, p.form, l.lot_number, l.crop_year, l.received_date, l.use_position
+    FROM ingredient_lots l
+    JOIN ingredients i ON i.id = l.ingredient_id
+    JOIN ingredient_categories c ON c.id = i.category_id
+    JOIN ingredient_products p ON p.id = l.product_id
+    WHERE c.key = 'hops' ORDER BY i.name, p.form, l.use_position
+    """)
+  end
+
+  defp backfill! do
+    {v, m} = Enum.find(migrations(), fn {v, _} -> v == @backfill end)
+    :ok = Ecto.Migrator.down(Repo, v, m, opts([]))
+    :ok = Ecto.Migrator.up(Repo, v, m, opts([]))
+  end
+
+  # A lot of `product` (an id) with no position, as the old code made it.
+  defp old_lot!(ingredient, product, number, received, crop \\ nil),
+    do:
+      insert!("ingredient_lots", %{
+        "ingredient_id" => ingredient,
+        "product_id" => product,
+        "lot_number" => number,
+        "received_date" => received,
+        "crop_year" => crop,
+        "status" => "available",
+        "pack_name" => "box"
+      })
+
+  defp place(id), do: one("SELECT use_position FROM ingredient_lots WHERE id = ?", [id])
+
+  describe "the use order's backfill (§4.1)" do
+    test "from D64's data: every hop lot has a place, 1..n in each list, by crop year where the dates tie; EKG's and Pink Boots' too" do
+      d64!()
+      up!()
+      assert Enum.all?(use_lists(), &is_nil(List.last(&1)))
+      backfill!()
+
+      for {_list, lots} <- Enum.group_by(use_lists(), fn [hop, form | _] -> {hop, form} end) do
+        assert Enum.map(lots, &List.last/1) == Enum.to_list(1..length(lots))
+        years = Enum.map(lots, &Enum.at(&1, 3))
+        assert years == Enum.sort(years)
+      end
+
+      assert length(use_lists()) == 28
+      # One hop really has two crop years in a list, so the sort above says something.
+      assert Enum.any?(
+               Enum.group_by(use_lists(), fn [hop, form | _] -> {hop, form} end),
+               fn {_, lots} -> lots |> Enum.uniq_by(&Enum.at(&1, 3)) |> length() > 1 end
+             )
+
+      # The seeds then add EKG's lot with its place, and a second run moves nothing.
+      assert seed!() =~ "1 new lots"
+      before = use_lists()
+      assert ["EKG", "T90 Pellet", "EKG-2025", 2025, _, 1] = Enum.find(before, &(hd(&1) == "EKG"))
+      seed!()
+      assert use_lists() == before
+
+      assert rows("""
+             SELECT count(*) FROM ingredient_lots l JOIN ingredients i ON i.id = l.ingredient_id
+             JOIN ingredient_categories c ON c.id = i.category_id
+             WHERE c.key IS NOT 'hops' AND l.use_position IS NOT NULL
+             """) == [[0]]
+    end
+
+    test "an empty database's seeds give every hop lot a place" do
+      seed!()
+      assert length(use_lists()) == 29
+      refute Enum.any?(use_lists(), &is_nil(List.last(&1)))
+    end
+
+    test "received date, then crop year, then id; a list per form, across makers; by key, not name; a child's too; nothing else" do
+      hops =
+        insert!("ingredient_categories", %{
+          "name" => "Houblon",
+          "key" => "hops",
+          "sort_order" => 1
+        })
+
+      child =
+        insert!("ingredient_categories", %{
+          "name" => "Old child",
+          "parent_id" => hops,
+          "sort_order" => 1
+        })
+
+      other = insert!("ingredient_categories", %{"name" => "Hops", "sort_order" => 2})
+
+      [citra, under, grain] =
+        for {n, cat} <- [{"Citra", hops}, {"Under", child}, {"Grain", other}],
+            do: insert!("ingredients", %{"name" => n, "category_id" => cat})
+
+      [m1, m2] = for n <- ~w(M1 M2), do: insert!("parties", %{"name" => n, "active" => 1})
+
+      product = fn ing, maker, form ->
+        insert!("ingredient_products", %{
+          "ingredient_id" => ing,
+          "manufacturer_party_id" => maker,
+          "form" => form,
+          "unit" => "lb"
+        })
+      end
+
+      [t1, t2, cryo] = [
+        product.(citra, m1, "T90 Pellet"),
+        product.(citra, m2, "T90 Pellet"),
+        product.(citra, m1, "Cryo")
+      ]
+
+      late = old_lot!(citra, t1, "late", "2026-11-19", 2023)
+      y25 = old_lot!(citra, t2, "y25", "2026-11-01", 2025)
+      y24b = old_lot!(citra, t1, "y24b", "2026-11-01", 2024)
+      y24c = old_lot!(citra, t2, "y24c", "2026-11-01", 2024)
+      undated = old_lot!(citra, t1, "undated", nil, 2026)
+      c1 = old_lot!(citra, cryo, "c1", "2026-11-20", 2025)
+      u = old_lot!(under, product.(under, m1, "T90 Pellet"), "u", "2026-11-01", 2025)
+      g = old_lot!(grain, product.(grain, m1, nil), "g", "2026-11-01")
+
+      backfill!()
+      assert Enum.map([undated, y24b, y24c, y25, late], &place/1) == [1, 2, 3, 4, 5]
+      assert Enum.map([c1, u, g], &place/1) == [1, 1, nil]
+
+      # Run again, with one moved by hand and a new one without a place: kept, and the end.
+      Repo.query!("UPDATE ingredient_lots SET use_position = 40 WHERE id = ?", [undated])
+      more = old_lot!(citra, t1, "more", "2020-01-01", 2020)
+      backfill!()
+      assert Enum.map([y24b, y24c, y25, late, undated, more], &place/1) == [2, 3, 4, 5, 40, 41]
     end
   end
 end
