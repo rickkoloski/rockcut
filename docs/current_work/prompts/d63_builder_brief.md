@@ -275,3 +275,27 @@ browser check at desktop and 360 px as `brewer1`, `breweryMgr`, `owner`, the bre
 
 **Reply with** commits, counts (with seeds), rule → test (which you proved by revert), item 6's list of
 changed specs, and `LEAD:` notes for anything the spec didn't decide.
+
+---
+
+# Fix cycle 1 (local QA)
+
+2026-11-25 · lead. Local QA: 17 scenarios, no defect in D63's own rules. Gap 1 was the brief's mistake (the
+API's rule stands: a count's extra goes to the newest lot that isn't expired). Gap 2 is D55's behavior.
+
+1. **Count wording** (`lib/inventory.ts` `lotChoice`, both branches): "Over: onto the newest lot that isn't
+   expired." Update the tests that quote it. No API change.
+2. **Back after a delete shows the deleted row** (older than D63). Delete a product, land on the list, press
+   Back: the page draws the cached row with its buttons, though its GET answered 404. After a delete that
+   leaves the page, Back must say not found. Drop that row's cached detail query once the page has been left,
+   so the mounted page neither refetches nor flashes "not found". **Don't** make a 404 replace a page that is
+   open with someone's typing in it: a row someone else deletes keeps today's behavior (D64 `goneOr`).
+   Cover every detail page with a 404 branch that can be deleted: ProductPage, IngredientDetail, OrderPage,
+   BatchDetail, BrandDetail, RecipeDetail, CategoryDetail. Say which delete from their own page.
+   Playwright at 1366 and 360 px for a product, and one other page, proved by revert.
+   Also check Forward after that Back on a phone: QA saw it stay on the deleted page. Report what you find.
+3. **OfferDialog's pack-note hint** (`OfferDialog.tsx` ~167): on g and mL products it says "(5 lb)". Show the
+   "(5 lb)" example only where it makes sense (tablets/each), with a fitting one or none elsewhere. vitest.
+
+Seeded rows read only. No migration. Land when the gates in the Stop 0 "Done when" pass (the Playwright specs
+you touched, plus the whole `ingredients` project on your scratch copy). Don't land until I say. Report as before.
