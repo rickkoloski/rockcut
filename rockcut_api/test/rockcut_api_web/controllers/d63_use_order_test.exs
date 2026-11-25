@@ -622,13 +622,10 @@ defmodule RockcutApiWeb.D63UseOrderTest do
 
   describe "allocation (§4.3)" do
     setup c do
-      # The newest first in use order; the oldest last.
-      [old, mid, new] = [
-        lot!(c, "OLD", received: -30),
-        lot!(c, "MID", received: -20),
-        lot!(c, "NEW", received: -1)
-      ]
-
+      # The newest by date has the lowest id, and is first in use order.
+      new = lot!(c, "NEW", received: -1)
+      old = lot!(c, "OLD", received: -30)
+      mid = lot!(c, "MID", received: -20)
       {200, _} = order(c, [new, old, mid])
       %{old: old, mid: mid, new: new}
     end
