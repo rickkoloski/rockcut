@@ -304,7 +304,7 @@ Register: **DR-4**'s recipe half moves from D63 to D68 (edited with this spec).
 - Add a lot: it's at the end. Receive into an existing lot: it doesn't move.
 - **Record movement**, Used 3 lb "In use order" on one maker's product: it comes from that maker's
   first lot in the list, spilling to the next, as two movements. Picking a lot by hand still works.
-- **Count** 1 lb short: it comes off the first lot in use order. Count 1 lb over: onto the newest lot.
+- **Count** 1 lb short: it comes off the first lot in use order. Count 1 lb over: onto the newest lot that isn't expired.
 - Expire the first lot: it's skipped, and the next reads "In use".
 - Use a lot up: it's hidden. As `brewer1`, turn Hide used-up lots off: it shows under "Used up", and
   still does after a reload. `brewer2` still has it hidden. Count stock back onto it: it's in its old
