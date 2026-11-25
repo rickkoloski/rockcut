@@ -10,7 +10,8 @@ defmodule RockcutApi.Ingredients.Catalog do
   managed (products, packs, movements). D64 §4.1: Yeast Strains is managed
   too (Dry and Liquid, counted `each` in bricks and pitchables). Other Consumables' children share
   its key; their forms, units and packs are the child's, by name (Water
-  Salts, Finings), and any other child gets the union of the two (A10).
+  Salts, Process Aids; D63 §5.1 renamed it from Finings, which is still
+  known), and any other child gets the union (A10).
   """
   import Ecto.Query
 
@@ -31,9 +32,14 @@ defmodule RockcutApi.Ingredients.Catalog do
     "yeast" => {["Dry", "Liquid"], ["each"], ~w(brick pitchable case)}
   }
 
+  # D63 §5.1: Process Aids (with g and mL), by its old name too.
+  @process_aids {["Liquid", "Powder", "Tablet"], ["fl oz", "lb", "each", "g", "mL"],
+                 ~w(jug bottle bag tub)}
+
   @consumable_children %{
     "water salts" => {["Powder", "Flake"], ["lb"], ~w(bag pail tub)},
-    "finings" => {["Liquid", "Powder", "Tablet"], ["fl oz", "lb", "each"], ~w(jug bottle bag tub)}
+    "process aids" => @process_aids,
+    "finings" => @process_aids
   }
 
   # Sugars: Dry is always lb; Liquid is lb or gal.
@@ -47,7 +53,9 @@ defmodule RockcutApi.Ingredients.Catalog do
     "gal" => ["pail"],
     "fl oz" => ["jug", "bottle"],
     "oz" => ["bag"],
-    "each" => ["tub"]
+    "each" => ["tub"],
+    "g" => ["bag"],
+    "mL" => ["bottle", "jug"]
   }
 
   @pack_names ~w(sack box bag pail drum case jar bottle jug tub brick pitchable)

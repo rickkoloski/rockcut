@@ -83,9 +83,9 @@ defmodule RockcutApiWeb.D65Stop1Test do
       assert Catalog.forms("consumables", c.salts) == ["Powder", "Flake"]
       assert Catalog.units("consumables", c.salts) == ["lb"]
       assert Catalog.pack_names("consumables", c.salts) == ~w(bag pail tub)
-      assert Catalog.forms("consumables", c.finings) == ["Liquid", "Powder", "Tablet"]
-      assert Catalog.units("consumables", c.finings) == ["fl oz", "lb", "each"]
-      assert Catalog.pack_names("consumables", c.finings) == ~w(jug bottle bag tub)
+      assert Catalog.forms("consumables", c.process_aids) == ["Liquid", "Powder", "Tablet"]
+      assert Catalog.units("consumables", c.process_aids) == ["fl oz", "lb", "each", "g", "mL"]
+      assert Catalog.pack_names("consumables", c.process_aids) == ~w(jug bottle bag tub)
 
       other =
         Repo.insert!(%RockcutApi.Brewing.IngredientCategory{
@@ -94,7 +94,7 @@ defmodule RockcutApiWeb.D65Stop1Test do
         })
 
       assert Catalog.forms("consumables", other) == ["Powder", "Flake", "Liquid", "Tablet"]
-      assert Catalog.units("consumables", other) == ["lb", "fl oz", "each"]
+      assert Catalog.units("consumables", other) == ["lb", "fl oz", "each", "g", "mL"]
       assert Catalog.pack_names("consumables", other) == ~w(bag pail tub jug bottle)
 
       assert Catalog.pack_names("fruits") == ~w(pail drum case bag box)
@@ -123,7 +123,7 @@ defmodule RockcutApiWeb.D65Stop1Test do
              }
 
       assert by["Water Salts"]["key"] == "consumables" and by["Water Salts"]["units"] == ["lb"]
-      assert by["Finings"]["forms"] == ["Liquid", "Powder", "Tablet"]
+      assert by["Process Aids"]["forms"] == ["Liquid", "Powder", "Tablet"]
       assert by["Fruits"]["allows_children"] == false and by["Fruits"]["allows_fields"] == false
       assert by["Other Consumables"]["allows_children"] == true
       assert by["Grains"]["manufacturer_required"] == true
