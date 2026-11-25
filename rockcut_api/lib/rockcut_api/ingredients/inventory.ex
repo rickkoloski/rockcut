@@ -6,7 +6,8 @@ defmodule RockcutApi.Ingredients.Inventory do
   Every write that reads stock first runs in one `BEGIN IMMEDIATE`
   transaction (as D32's series writes) and recomputes on-hand inside it, so
   two brewers can't take the same packs. Outgoing movements and total counts
-  share `allocate/3`: oldest lots first by received date, then lot id,
+  share `allocate/3`: oldest lots first by received date, then lot id (a hop's
+  in its use order, D63 §4.3),
   skipping `expired` lots (Matt, 2026-11-17: a brewer can still pick an
   expired lot by hand, and a by-lot count includes it). A movement never
   takes a lot below 0. A lot's status follows its on-hand
@@ -34,6 +35,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     Products,
     SupplierOffer,
     Units,
+    UseOrder,
     Valuation
   }
 
@@ -158,7 +160,8 @@ defmodule RockcutApi.Ingredients.Inventory do
   @doc """
   Which lots of `product_id` give `quantity` (a positive Decimal in its unit):
   `:oldest_first` takes from the oldest lot with stock (received date, then
-  lot id), then the next, skipping expired lots; a lot id takes it all from
+  lot id; a hop product's lots in use order, D63 §4.3), then the next,
+  skipping expired lots; a lot id takes it all from
   that lot (expired or not), which must be the product's. `{:ok, [{lot,
   quantity}]}`, or `{:error, :short, on_hand}` with the product's non-expired (or
   that lot's) on-hand. Reads stock as it is now: call it inside the write
@@ -198,14 +201,29 @@ defmodule RockcutApi.Ingredients.Inventory do
     end
   end
 
-  # Oldest first: received date, then lot id.
+  # The order stock is taken in: received date, then lot id; a hop's lots in
+  # use order (D63 §4.3). Its last lot isn't the newest: see `newest/1`.
   defp product_lots(product_id) do
-    from(l in IngredientLot,
-      where: l.product_id == ^product_id,
-      order_by: [asc: l.received_date, asc: l.id]
-    )
-    |> Repo.all()
+    lots =
+      from(l in IngredientLot,
+        where: l.product_id == ^product_id,
+        order_by: [asc: l.received_date, asc: l.id]
+      )
+      |> Repo.all()
+
+    if Catalog.product_key(product_id) == "hops", do: UseOrder.sort(lots), else: lots
   end
+
+  # The newest of `lots` by received date, then lot id (no date is the
+  # oldest), whatever order they're in; nil when there are none.
+  defp newest([]), do: nil
+  defp newest(lots), do: Enum.max_by(lots, &{received_day(&1), &1.id})
+
+  defp received_day(%{received_date: nil}), do: 0
+  defp received_day(%{received_date: date}), do: Date.to_gregorian_days(date)
+
+  @doc "D63 §4.3: a hop's lots in use order across makers, for one form (`UseOrder.use_order/2`)."
+  defdelegate use_order(ingredient_id, form), to: UseOrder
 
   ## Movements
 
@@ -335,8 +353,8 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   @doc """
   A count of a product (spec §3.8) on `counted_on`, in its unit. `mode:
-  "total"` with `counted`: a shortfall comes off the oldest lots first, an
-  overage goes onto the newest lot. Expired lots count towards the total
+  "total"` with `counted`: a shortfall comes off the oldest lots first (a
+  hop's in use order), an overage goes onto the newest lot by received date. Expired lots count towards the total
   but a shortfall can't come off them (a 422 when the non-expired stock is
   too small), and an overage goes onto the newest non-expired lot (a 422
   when every lot is expired: count by lot instead). `mode: "by_lot"` with
@@ -417,14 +435,14 @@ defmodule RockcutApi.Ingredients.Inventory do
     on_hand = on_hand_by_lot(Enum.map(lots, & &1.id))
     total = Enum.reduce(Map.values(on_hand), Decimal.new(0), &Decimal.add/2)
     diff = Decimal.sub(counted, total)
-    newest = lots |> Enum.reject(&(&1.status == "expired")) |> List.last()
+    newest = lots |> Enum.reject(&(&1.status == "expired")) |> newest()
 
     cond do
       lots == [] ->
         Repo.rollback(refusal("This product has no lots; add a lot first"))
 
       Decimal.eq?(diff, 0) ->
-        [{[{newest || List.last(lots), Decimal.new(0)}], false}]
+        [{[{newest || newest(lots), Decimal.new(0)}], false}]
 
       Decimal.negative?(diff) ->
         case allocate(product_id, Decimal.negate(diff), :oldest_first) do
@@ -818,7 +836,7 @@ defmodule RockcutApi.Ingredients.Inventory do
         lot =
           %IngredientLot{}
           |> IngredientLot.changeset(Map.delete(attrs, "status"))
-          |> Repo.insert()
+          |> UseOrder.insert_lot()
           |> rollback_on_error()
 
         if lot.product_id do
@@ -898,11 +916,14 @@ defmodule RockcutApi.Ingredients.Inventory do
              product_form(blank(merged["product_id"]))
            ) do
       write(fn ->
+        # D63 §4.1: another product may be another use list, or none.
         lot =
-          lot
-          |> IngredientLot.changeset(attrs)
-          |> Repo.update()
-          |> rollback_on_error()
+          UseOrder.keep([lot.id], fn ->
+            lot
+            |> IngredientLot.changeset(attrs)
+            |> Repo.update()
+            |> rollback_on_error()
+          end)
 
         Features.write!({:lot, lot.id}, features)
         if moved?, do: sync_status!([lot.id])

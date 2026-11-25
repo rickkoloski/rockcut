@@ -17,6 +17,7 @@ import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary,
 import { useApiList } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
+import HideUsedUpSwitch from '../../components/HideUsedUpSwitch'
 import QuantityToggle from '../../components/QuantityToggle'
 import { categoryFromParam, categoryParam, rememberLibrarySearch } from '../../lib/libraryView'
 import { categoryKey as keyOf, grainCategories, isD65Key, keyedCategories, manufacturerLabel, manufacturersFor, toggleLabels } from '../../lib/ingredientFeatures'
@@ -252,6 +253,8 @@ export default function IngredientsList() {
           <>
             {grainsView && <QuantityToggle {...toggleLabels('sack', 'lb')} />}
             {hopsView && <QuantityToggle {...toggleLabels('box', 'lb')} />}
+            {/* D63 §4.4 (A8). */}
+            {hopsView && <HideUsedUpSwitch />}
             {/* D65: packs and units differ by product. */}
             {d65View && <QuantityToggle packsLabel="Packs + unit" totalLabel="Total" />}
             {/* D61 §4: Purchasing (orders and receiving). */}

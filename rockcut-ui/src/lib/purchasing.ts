@@ -1,7 +1,7 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
 // total and target progress, whole packs (D62 §3.5; sacks for grain), the
 // previous lot (A3) and how a line's lot rows add up.
-import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, isCountUnit, packPlural, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, isCountUnit, packPlural, packSizeNumber, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
 import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -24,10 +24,24 @@ export function money(v: string | number | null | undefined, digits = 2): string
  */
 export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null; pack_note?: string | null }, unit = 'lb'): string {
   // D64: a pack of one that is the unit itself reads "brick · 1 (500 g)", not "brick · 1 bricks".
-  const size = isCountUnit(unit) && Number(o.pack_size) === 1 && packPlural(o.pack_name) === unit ? '1' : `${Number(o.pack_size)} ${unit}`
+  const size = isCountUnit(unit) && Number(o.pack_size) === 1 && packPlural(o.pack_name) === unit ? '1' : `${packSizeNumber(o.pack_size)} ${unit}`
   // D65 (A16): the pack note follows the pack, "tub · 872 tablets (5 lb)".
   if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}${o.pack_note ? ` (${o.pack_note})` : ''}`
   return o.form ? `${size} ${o.form}` : size
+}
+
+/**
+ * The pack note's hint: the pack as the saved offer will read (D64 lead
+ * decisions 6, "brick · 1 (500 g)"). Before a note is typed, an example where
+ * a pack's count doesn't say its weight (D63): tablets and other counts, and
+ * a brick; none on a weight or a volume, a pitchable or a case of either.
+ */
+export function packNoteHelper(o: { pack_name: string; pack_size: string | number | null; pack_note: string }, unit: string): string {
+  const example = unit === 'bricks' ? (o.pack_name === 'brick' ? '500 g' : '') : isCountUnit(unit) && unit !== 'pitchables' ? '5 lb' : ''
+  const pack_note = o.pack_note.trim() || example
+  if (!pack_note) return 'Optional, shown with the pack'
+  const pack = o.pack_size ? offerPackText({ ...o, pack_size: o.pack_size, pack_note }, unit) : `${o.pack_name} · … ${unit} (${pack_note})`
+  return `Optional, shown with the pack: "${pack}"`
 }
 
 /**
@@ -53,6 +67,17 @@ export const amountText = (quantity: string | number, unit: string) =>
 
 /** "1,980 lb · 11.5 gal": quantities per unit, never added together (D62 §3.8). */
 export const byUnitText = (byUnit: UnitQuantity[]) => byUnit.map((u) => amountText(u.quantity, u.unit_label ?? u.unit)).join(' · ')
+
+/**
+ * D63 (6262): the quantity per unit as an order counts it, by the units'
+ * own words, so bricks and pitchables (both `each`) stay apart. New order's
+ * running total and the order page both read it.
+ */
+export function sumByUnit(rows: { unit: string; quantity: number }[]): UnitQuantity[] {
+  const units = new Map<string, number>()
+  for (const r of rows) units.set(r.unit, (units.get(r.unit) ?? 0) + r.quantity)
+  return [...units.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+}
 
 /**
  * The one pack name a set of lines shares ("sack" on a grain-only order),
@@ -94,23 +119,19 @@ export interface DraftLine {
 export function runningTotal(lines: DraftLine[], emptyPack: string | null = 'sack'): { packs: number; byUnit: UnitQuantity[]; dollars: number; text: string } {
   let packs = 0
   let cents = 0
-  const units = new Map<string, number>()
+  const rows: { unit: string; quantity: number }[] = []
   const names: (string | null | undefined)[] = []
   for (const l of lines) {
     // D65 lead decisions 3 (gap 6): a line with its offer but no packs yet
     // counts as 0 of its pack and unit ("0 pails · 0 gal"), never "0 sacks".
     if (l.packSize == null) continue
-    const unit = l.unit ?? 'lb'
     const n = l.packs ?? 0
     packs += n
     names.push(l.packName ?? 'sack')
-    units.set(unit, (units.get(unit) ?? 0) + n * l.packSize)
+    rows.push({ unit: l.unit ?? 'lb', quantity: n * l.packSize })
     if (l.price != null) cents += Math.round(n * l.price * 100)
   }
-  if (units.size === 0) units.set('lb', 0)
-  const byUnit = [...units.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+  const byUnit = sumByUnit(rows.length ? rows : [{ unit: 'lb', quantity: 0 }])
   const dollars = cents / 100
   const packText = `${packs.toLocaleString('en-US')} ${packWord(names.length ? sharedPackName(names) : emptyPack, packs)}`
   return { packs, byUnit, dollars, text: `${packText} · ${byUnitText(byUnit)} · ${money(dollars)}` }

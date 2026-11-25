@@ -215,6 +215,8 @@ export interface IngredientLot {
   received_date: string | null
   /** D62 §3.4: a hop lot's crop year (required there; null elsewhere). */
   crop_year?: number | null
+  /** D63 §4.1: a hop lot's place in its use list (null elsewhere). */
+  use_position?: number | null
   status: string
   features: FeatureValues | null
   /** D62 §3.4: the feature keys whose value is outside the product's typical range. */
@@ -233,6 +235,30 @@ export interface IngredientLot {
   notes: string | null
   inserted_at: string
   updated_at: string
+}
+
+/** D63 §4.2: a lot in a hop's use list. */
+export interface HopUseLot {
+  id: number
+  lot_number: string | null
+  product_id: number | null
+  maker: string | null
+  supplier: string | null
+  crop_year: number | null
+  alpha: string | null
+  received_date: string | null
+  on_hand: string | null
+  pack_name: string | null
+  pack_size: string | null
+  unit: string | null
+  status: string
+}
+
+/** D63 §4.2: one form's lots in use order, used-up ones included; `version` goes back with a new order. */
+export interface HopUseList {
+  form: string | null
+  version: string
+  lots: HopUseLot[]
 }
 
 // ── D60 grain catalog and inventory ──

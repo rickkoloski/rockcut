@@ -1060,6 +1060,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       unit: maybe_render(lot, :product, &RockcutApi.Ingredients.Products.unit/1),
       received_date: lot.received_date,
       crop_year: lot.crop_year,
+      # D63 §4.1: a hop lot's place in its use list, else nil.
+      use_position: lot.use_position,
       status: lot.status,
       features: lot_features(lot),
       outside_range: lot.outside_range,
@@ -1074,6 +1076,28 @@ defmodule RockcutApiWeb.JSONHelpers do
       notes: lot.notes,
       inserted_at: lot.inserted_at,
       updated_at: lot.updated_at
+    }
+  end
+
+  # D63 §4.2: one form's use list, in order (used-up lots included).
+  def hop_use_list(%{form: form, version: version, lots: lots}),
+    do: %{form: form, version: version, lots: Enum.map(lots, &hop_use_lot/1)}
+
+  defp hop_use_lot(lot) do
+    %{
+      id: lot.id,
+      lot_number: lot.lot_number,
+      product_id: lot.product_id,
+      maker: (lot.product && lot.product.manufacturer && lot.product.manufacturer.name) || nil,
+      supplier: lot.supplier && lot.supplier.name,
+      crop_year: lot.crop_year,
+      alpha: get_in(lot_features(lot), ["alpha_acid_pct", :value]),
+      received_date: lot.received_date,
+      on_hand: lot.on_hand,
+      pack_name: lot.pack_name,
+      pack_size: lot.pack_size,
+      unit: RockcutApi.Ingredients.Products.unit(lot.product),
+      status: lot.status
     }
   end
 

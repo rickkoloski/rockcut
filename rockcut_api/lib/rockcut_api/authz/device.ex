@@ -21,7 +21,8 @@ defmodule RockcutApi.Authz.Device do
     * if it's the brewhouse device (home: Brewery), read and work the
       production schedule (D50): `:read` and `:write` on `:production`, each
       write with a person's staff code. Never `:setup` (tanks, phases, step
-      types, templates).
+      types, templates). It also reads the brewery's settings (D63), with no
+      staff code, and never changes them.
 
   When roles become data (RBAC roadmap Phases 2–6), this list becomes the
   system role for device accounts; `authz_device_test.exs` pins it.
@@ -88,6 +89,10 @@ defmodule RockcutApi.Authz.Device do
   # works the schedule; `:setup` falls through to the catch-all.
   def can?(%User{} = device, action, :production) when action in [:read, :write],
     do: home_key(device) == "brewery"
+
+  # D63 §6.2 (A7): the brewhouse device reads the brewery's settings, view
+  # only: `:manage` falls through to the catch-all.
+  def can?(%User{} = device, :read, :brewery_settings), do: home_key(device) == "brewery"
 
   def can?(_device, _action, _resource), do: false
 

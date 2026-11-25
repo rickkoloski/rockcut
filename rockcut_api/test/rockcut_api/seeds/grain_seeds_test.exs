@@ -121,7 +121,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              }
 
     refute Repo.exists?(from i in Ingredient, where: i.category_id == ^grains().id)
-    # D65 §4.1: Future Ingredients gone, Water Salts and Finings added.
+    # D65 §4.1: Future Ingredients gone, Water Salts and Finings (D63: Process Aids) added.
     assert first[IngredientCategory] == 14
 
     # D62: plus the hop reference's 27 products and offers, and 26 × 3
@@ -132,10 +132,13 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     # D64 Amendment: and the yeast reference's 11 products and offers.
     # D64 Stop 4: and the synthetic setup's two [SEED] yeast products, one
     # offer each, the Liquid one with its 7 bbl pitch size.
-    assert first[Product] == 44 + 27 + 29 + 3 + 11 + 2
-    assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11 + 2
-    # Blanks stay blank (23 of them, mostly protein), so fewer than 44 × 5.
-    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3 + 6 + 15 + 1
+    # D63 §5: plus Pink Boots '24 (a hop), EKG, four process aids and seven
+    # spices (no offers), and the synthetic setup's [SEED] hop's two (none).
+    assert first[Product] == 44 + 27 + 29 + 3 + 11 + 2 + 1 + 1 + 4 + 7 + 2
+    assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11 + 2 + 1 + 1 + 4
+    # Blanks stay blank (21 of them, mostly protein; D63 gave Acidulated and
+    # the flaked oats an extract, and SoNature's lime a Brix), so fewer than 44 × 5.
+    assert first[ProductFeatureValue] == 44 * 5 - 21 + 26 * 3 + 6 + 16 + 1
 
     # D62: BSG is a hop manufacturer too, and the hop companies both.
     # D65: the sugar and fruit companies.
@@ -156,6 +159,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              {"Inland Island", "supplier"},
              {"John Fearless", "manufacturer"},
              {"John Fearless", "supplier"},
+             {"Kerry", "manufacturer"},
              {"Lupulin Exchange", "manufacturer"},
              {"Lupulin Exchange", "supplier"},
              {"Michigan Hop Alliance", "manufacturer"},
@@ -176,7 +180,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
            ]
 
     assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) ==
-             8 + 5 + 7 + 3
+             8 + 5 + 7 + 3 + 1
 
     refute Repo.exists?(
              from d in CategoryFieldDefinition,

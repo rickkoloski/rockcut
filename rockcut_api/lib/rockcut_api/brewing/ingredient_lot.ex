@@ -19,6 +19,9 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :notes, :string
     # D62 §3.4: a hop lot's crop year (required there, `Inventory`).
     field :crop_year, :integer
+    # D63 §4.1: its place in its hop's use list (`Ingredients.UseOrder`, the
+    # only writer); nil outside Hops. Never cast.
+    field :use_position, :integer
     # D62 §3.4: the feature keys whose value is outside the product's range
     # (`Features.put_outside_range/1`).
     field :outside_range, {:array, :string}, virtual: true, default: []

@@ -77,10 +77,8 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
   const [renaming, setRenaming] = useState<{ id: number; from: string; name: string; error: string | null } | null>(null)
   const [retiring, setRetiring] = useState<DailyItem | null>(null)
   const [deleting, setDeleting] = useState<DailyItem | null>(null)
-  // S76: back closes the retire (or delete) confirm, then the dialog.
+  // S76: back closes the retire (or delete) confirm (ConfirmDialog's own), then the dialog.
   usePhoneBackCloses(true, onClose)
-  usePhoneBackCloses(!!retiring, () => setRetiring(null))
-  usePhoneBackCloses(!!deleting, () => setDeleting(null))
   const full = items.length >= MAX_DAILY_ITEMS
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

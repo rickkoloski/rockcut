@@ -10,7 +10,6 @@ import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import useActing, { actingRun } from '../../hooks/useActing'
-import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import { deleteWithCode, isActingCancelled, withCode } from '../../lib/acting'
 import {
@@ -196,11 +195,6 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   // History: the whole board's, or one task's (from its dialog).
   const [history, setHistory] = useState<{ task?: { id: number; title: string } } | null>(null)
   const [busy, setBusy] = useState(false)
-  // S76: at phone width, back closes the board's confirms (the dialogs do their own).
-  usePhoneBackCloses(!!reopening, () => setReopening(null))
-  usePhoneBackCloses(!!deleting, () => setDeleting(null))
-  usePhoneBackCloses(movingAll, () => setMovingAll(false))
-  usePhoneBackCloses(!!removing && removing.laterOpen + removing.laterChanged === 0, () => setRemoving(null))
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY, dept] })
   // D40: a cancelled staff-code dialog isn't an error; the write never ran.

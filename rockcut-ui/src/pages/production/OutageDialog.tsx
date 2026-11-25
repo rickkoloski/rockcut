@@ -52,7 +52,6 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
   usePhoneBackCloses(true, onClose)
-  usePhoneBackCloses(deleting, () => setDeleting(false))
 
   // The last day keeps its distance from the first when the first moves.
   const moveFrom = (next: string) => {

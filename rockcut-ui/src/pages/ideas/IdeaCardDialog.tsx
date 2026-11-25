@@ -37,7 +37,7 @@ import {
 } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { useBackCloses } from '../../hooks/useBackCloses'
+import { afterBackCloses, useBackCloses } from '../../hooks/useBackCloses'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
@@ -410,7 +410,10 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
         onConfirm={async () => {
           const ok = await save(() => api.delete(ideaPath(key, 'cards', cardId)), `Deleted "${card.title}"`)
           setConfirmDelete(false)
-          if (ok) onClose()
+          if (!ok) return
+          setDescriptionDirty(false)
+          // D63 (6260): closing navigates; the confirm's back entry comes off first.
+          afterBackCloses(onClose)
         }}
       />
       <ConfirmDialog
@@ -423,7 +426,7 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
         onConfirm={() => {
           setAskDiscard(false)
           setDescriptionDirty(false)
-          onClose()
+          afterBackCloses(onClose)
         }}
       />
     </Dialog>

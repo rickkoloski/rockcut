@@ -90,7 +90,7 @@ export default function ProductPage() {
   const onOrder = openOrders
     .map((o) => ({ order: o, packs: o.lines.filter((l) => l.offer.product_id === productId).reduce((n, l) => n + l.packs_ordered, 0) }))
     .filter((x) => x.packs > 0)
-  const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
+  const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS, rowKey: (pid) => ['ingredient_product', pid] })
   // D64 §4.6: a yeast pitch names its batch; the movements say which.
   const yeastProduct = product?.category_key === 'yeast'
   const { data: batches = [] } = useApiList<YeastBatch>(['yeast_batches'], '/api/yeast/batches', undefined, { enabled: yeastProduct })

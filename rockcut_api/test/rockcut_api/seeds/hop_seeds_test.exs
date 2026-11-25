@@ -1,9 +1,11 @@
 defmodule RockcutApi.Seeds.HopSeedsTest do
   @moduledoc """
   D62 §7 and the hop Amendments: `seeds/hop_reference.exs` (through
-  `priv/repo/seeds.exs`) twice gives the same rows: 27 hop products with
-  their ranges and one box · 11 lb offer each, and Matt's cooler list as 28
-  lots with alpha, crop year and an Opening amount (409.6 lb in all). A lot
+  `priv/repo/seeds.exs`) twice gives the same rows: 28 hop products (D63
+  §5.5: Pink Boots '23 and '24) with their ranges and one box · 11 lb offer
+  each, and Matt's cooler list as 28 lots with alpha, crop year and an Opening
+  amount (409.6 lb in all). D63 §5.2 adds EKG: a product, its offer and an
+  11 lb lot. A lot
   already there is never topped up; an edit made on the screens sticks.
   """
   # Not async: seeds.exs runs the synthetic setup (global env reads).
@@ -13,16 +15,28 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
   import ExUnit.CaptureIO
 
   alias RockcutApi.Brewing.{Ingredient, IngredientLot}
-  alias RockcutApi.Ingredients.{Catalog, Movement, Product, ProductFeatureValue, SupplierOffer}
+
+  alias RockcutApi.Ingredients.{
+    Catalog,
+    Movement,
+    Party,
+    Product,
+    ProductFeatureValue,
+    SupplierOffer,
+    UseOrder
+  }
+
+  alias RockcutApi.Seeds.Synthetic
 
   @moduletag :capture_log
 
   defp seed!, do: capture_io(fn -> Code.eval_file("priv/repo/seeds.exs") end)
 
+  # The reference products (the synthetic setup's [SEED] hop is below).
   defp hop_products do
     from p in Product,
       join: i in assoc(p, :ingredient),
-      where: i.category_id in ^Catalog.category_ids(["hops"])
+      where: i.category_id in ^Catalog.category_ids(["hops"]) and not like(i.name, "[SEED]%")
   end
 
   # The seeded lots: hop lots not made by the synthetic setup or a test.
@@ -45,7 +59,10 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
       lb: total_lb(),
       hops:
         Repo.aggregate(
-          from(i in Ingredient, where: i.category_id in ^Catalog.category_ids(["hops"])),
+          from(i in Ingredient,
+            where:
+              i.category_id in ^Catalog.category_ids(["hops"]) and not like(i.name, "[SEED]%")
+          ),
           :count
         )
     }
@@ -74,19 +91,20 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
     Enum.find(lot.feature_values, &(&1.feature_type.key == "alpha_acid_pct")).value
   end
 
-  test "twice: 27 products, 27 offers, 28 lots, 409.6 lb" do
+  test "twice: 28 + EKG products and offers, 28 + EKG lots, 409.6 + 11 lb" do
     seed!()
     first = hop_counts()
     seed!()
     assert hop_counts() == first
 
-    assert first.products == 27
-    assert first.offers == 27
-    assert first.lots == 28
-    assert Decimal.equal?(first.lb, "409.6")
+    assert first.products == 28 + 1
+    assert first.offers == 28 + 1
+    assert first.lots == 28 + 1
+    assert Decimal.equal?(first.lb, "420.6")
     # The six the base seed has (Centennial, Amarillo among them) plus the
-    # varieties it didn't: 25 names in the reference, 4 of them already there.
-    assert first.hops == 6 + 21
+    # varieties it didn't: 26 names in the reference, 4 of them already there,
+    # and EKG.
+    assert first.hops == 6 + 22 + 1
   end
 
   test "spot checks: Galaxy, Citra Cryo, Magnum under a box, Chinook twice" do
@@ -118,11 +136,17 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
              "Billy Goat"
 
     assert Repo.exists?(from i in Ingredient, where: i.name == "Hallertau Mittelfrüh")
-    assert Repo.exists?(from i in Ingredient, where: i.name == "Pink Boots Blend")
-    refute Repo.exists?(from l in IngredientLot, where: like(l.lot_number, "%EKG%"))
+    refute Repo.exists?(from i in Ingredient, where: i.name == "Pink Boots Blend")
+    assert lot!("Pink Boots '23", "T90 Pellet", "P92-IUPBB3182").crop_year == 2023
+    assert lot!("Pink Boots '24", "T90 Pellet", "P92-JUPBB4199").crop_year == 2024
+
+    ekg = lot!("EKG", "T90 Pellet", "EKG-2025")
+    assert ekg.crop_year == 2025 and Decimal.equal?(alpha(ekg), "5.9")
+    assert [%Movement{kind: "opening", quantity: ekg_lb}] = ekg.movements
+    assert Decimal.equal?(ekg_lb, 11)
   end
 
-  test "ranges, origin and offers; Pink Boots Blend has no range" do
+  test "ranges, origin and offers; Pink Boots has no range" do
     seed!()
 
     citra =
@@ -159,10 +183,13 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
       Repo.one!(
         from p in Product,
           join: i in assoc(p, :ingredient),
-          where: i.name == "Pink Boots Blend"
+          where: i.name == "Pink Boots '23",
+          preload: :offers
       )
 
     refute Repo.exists?(from v in ProductFeatureValue, where: v.product_id == ^pink.id)
+    # The supplier's own name for it.
+    assert [%SupplierOffer{order_name: "Pink Boots Blend"}] = pink.offers
   end
 
   test "a lot changed on the screens isn't topped up; a product edit sticks" do
@@ -182,8 +209,68 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
 
     seed!()
 
-    assert hop_counts().lots == 28
-    assert Decimal.equal?(total_lb(), "399.6")
+    assert hop_counts().lots == 28 + 1
+    assert Decimal.equal?(total_lb(), "410.6")
     assert Repo.reload!(galaxy.product).origin == "Australia (Tasmania)"
+  end
+
+  describe "the synthetic setup's [SEED] hop (D63 §9)" do
+    defp seed_hop_lists do
+      case Repo.get_by(Ingredient, name: "[SEED] Summit Cone") do
+        nil -> nil
+        hop -> UseOrder.list(hop.id)
+      end
+    end
+
+    defp seed_hop do
+      for %{form: form, lots: lots} <- seed_hop_lists() do
+        {form,
+         Enum.map(lots, fn l ->
+           {l.lot_number, l.product.manufacturer.name, l.status, Decimal.to_integer(l.on_hand),
+            l.use_position, l.crop_year == l.received_date.year}
+         end)}
+      end
+    end
+
+    @expected [
+      {"T90 Pellet",
+       [
+         {"[SEED] Summit Cone A", "Yakima Chief Hops", "depleted", 0, 1, true},
+         {"[SEED] Summit Cone B", "BSG", "expired", 22, 2, true},
+         {"[SEED] Summit Cone C", "Yakima Chief Hops", "available", 33, 3, true}
+       ]}
+    ]
+
+    test "three lots from two makers in one form: used up, expired, in stock; twice is the same" do
+      seed!()
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop() == @expected
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop() == @expected
+
+      assert Repo.aggregate(from(i in Ingredient, where: like(i.name, "[SEED] Summit%")), :count) ==
+               1
+    end
+
+    test "without the hop companies: no hop, no error" do
+      seed!()
+
+      Repo.update_all(from(p in Party, where: p.name == "Yakima Chief Hops"),
+        set: [name: "Other"]
+      )
+
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop_lists() == nil
+    end
+
+    test "Release.seed's seeds never make it where the synthetic setup may not run" do
+      env = Application.get_env(:rockcut_api, :deploy_env)
+      Application.put_env(:rockcut_api, :deploy_env, "prod")
+      on_exit(fn -> Application.put_env(:rockcut_api, :deploy_env, env) end)
+      seed!()
+      assert Repo.get_by(Ingredient, name: "EKG")
+      assert seed_hop_lists() == nil
+      refute Repo.exists?(from i in Ingredient, where: like(i.name, "[SEED]%"))
+    end
   end
 end

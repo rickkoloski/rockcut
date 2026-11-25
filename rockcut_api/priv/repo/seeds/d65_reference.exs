@@ -9,13 +9,14 @@
 # the screens stick. An existing ingredient gets a formula or an ion value
 # only where it has none. Run from `priv/repo/seeds.exs`, after the hop
 # reference (BSG is there already) and the D65 migrations (Water Salts,
-# Finings, "Dextrose (Corn Sugar)", the Brix, extract and ion feature types).
+# Process Aids, "Dextrose (Corn Sugar)", the Brix, extract and ion feature types).
 #
 # Source: the git-excluded `docs/current_work/reference/d65_*_matt_2026-11-20.csv`,
 # copied here. Names are the spec amendments' (the CSVs hold Matt's raw
 # input: "Gypsum (Hydrous)" is Calcium Sulfate (Gypsum), "Honey - Redstone"
 # is Honey from Colorado Honey Co. supplied by Redstone, "Tangereen" is
-# Tangerine). Dextrose 91 % and Belgian Candy Syrup 70 % are typical values
+# Tangerine). D63 §5.3, §5.4: the corrected values, and calcium chloride's
+# product is Anhydrous's. Belgian Candy Syrup 70 % is a typical value
 # for Matt to check (sugars amendment, decision 3).
 
 import Ecto.Query, only: [from: 2]
@@ -85,7 +86,7 @@ category_ids = %{
   sugars: top.("sugars"),
   consumables: top.("consumables"),
   salts: child.("Water Salts"),
-  finings: child.("Finings")
+  process_aids: child.("Process Aids")
 }
 
 missing = for {k, nil} <- category_ids, do: k
@@ -231,9 +232,21 @@ salts = [
   {"Calcium Sulfate (Gypsum)", "CaSO₄·2H₂O", [ca: "61.5", so4: "147.4"], "Powder", "32.00"},
   {"Magnesium Sulfate (Epsom Salt)", "MgSO₄·7H₂O", [mg: "26.1", so4: "103.0"], "Powder", "97.00"},
   {"Sodium Chloride (Table Salt)", "NaCl", [na: "103.9", cl: "160.3"], "Powder", "34.00"},
-  {"Calcium Chloride (Hydrous)", "CaCl₂·2H₂O", [ca: "72.0", cl: "127.4"], "Flake", "77.00"},
-  {"Calcium Chloride (Anhydrous)", "CaCl₂", [ca: "95.4", cl: "168.8"], nil, nil}
+  {"Calcium Chloride (Hydrous)", "CaCl₂·2H₂O", [ca: "72.0", cl: "127.4"], nil, nil},
+  {"Calcium Chloride (Anhydrous)", "CaCl₂", [ca: "95.4", cl: "168.8"], "Flake", "77.00"}
 ]
+
+# D63 §5.4: when its migration left Hydrous's product where it was, there's
+# no second one here.
+hydrous_product? =
+  Repo.exists?(
+    from p in Product,
+      join: i in Ingredient,
+      on: i.id == p.ingredient_id,
+      where:
+        i.category_id == ^category_ids.salts and
+          fragment("lower(?)", i.name) == "calcium chloride (hydrous)"
+  )
 
 counts =
   Enum.reduce(salts, counts, fn {name, formula, ions, form, price}, counts ->
@@ -254,7 +267,7 @@ counts =
       )
     end
 
-    if form do
+    if form && not (hydrous_product? and name == "Calcium Chloride (Anhydrous)") do
       {pid, new_product?} = product.(ing.id, nil, form, "lb", nil, [])
       add.(counts, {new?, new_product?, offer.(pid, "BSG", "bag", "50", nil, price)})
     else
@@ -266,11 +279,11 @@ counts =
 # {ingredient, manufacturer, form, extract, supplier, pack, size, pack price}
 sugars = [
   {"Lactose", nil, "Dry", "100", "BSG", "bag", "50", "50.00"},
-  {"Dextrose (Corn Sugar)", nil, "Dry", "91", "BSG", "bag", "50", "45.50"},
+  {"Dextrose (Corn Sugar)", nil, "Dry", "91.3", "BSG", "bag", "50", "45.50"},
   {"Belgian Candy Syrup", "Candico", "Liquid", "70", "BSG", "pail", "55", "42.90"},
   {"Black Strap Molasses", "Sweetener Sup Co.", "Liquid", "81.95", "BSG", "pail", "60", "49.20"},
   {"Honey", "Colorado Honey Co.", "Liquid", "80.33", "Redstone", "pail", "60", "120.00"},
-  {"DME", "Muntons", "Dry", "100", "BSG", "bag", "55", "55.00"}
+  {"DME", "Muntons", "Dry", "96", "BSG", "bag", "55", "55.00"}
 ]
 
 counts =
@@ -317,7 +330,7 @@ sonature = [
   {"Apricot", "Juice / concentrate", "40", "50"},
   {"Cherry", "Juice / concentrate", "56", "11.4"},
   {"Lemon", "Purée", "40", "11"},
-  {"Lime", "Purée", "40", nil}
+  {"Lime", "Purée", "40", "8"}
 ]
 
 counts =
@@ -328,8 +341,10 @@ counts =
     add.(counts, {new?, new_product?, offer.(pid, "SoNature", "pail", size, nil, nil)})
   end)
 
-# ── Finings (batch 4): Whirlfloc T, counted in tablets, ordered by the 5 lb tub ──
-{whirlfloc, new?} = ingredient.("Whirlfloc", category_ids.finings, [category_ids.consumables])
+# ── Process Aids (D65: Finings, batch 4): Whirlfloc T, counted in tablets, ordered by the 5 lb tub ──
+{whirlfloc, new?} =
+  ingredient.("Whirlfloc", category_ids.process_aids, [category_ids.consumables])
+
 {pid, new_product?} = product.(whirlfloc.id, nil, "Tablet", "each", "T", [])
 counts = add.(counts, {new?, new_product?, offer.(pid, "BSG", "tub", "872", "5 lb", "92.00")})
 

@@ -19,23 +19,45 @@ const KEY = 'rockcutBackCloses'
 let nextId = 1
 /** The entry of something that just closed, taken off after this tick unless handed over. */
 let releasing: { id: number; timer: ReturnType<typeof setTimeout> } | null = null
-/** Entries whose owner is open. */
-const owned = new Set<number>()
+/** Entries whose owner is open, with whether back may close it now. */
+const owned = new Map<number, () => boolean>()
 let listening = false
 
 function skipOrphans() {
   if (listening) return
   listening = true
   window.addEventListener('popstate', () => {
+    // D63 (6260): something that can't close now puts its own entry back (below).
+    if ([...owned.values()].some((blocked) => blocked())) return
     const entry = window.history.state?.[KEY]
     if (typeof entry === 'number' && !owned.has(entry) && releasing?.id !== entry) window.history.back()
   })
 }
 
-export function useBackCloses(open: boolean, onClose: () => void) {
+/**
+ * D63 (6260): runs `fn` once back's entries are off the top, for a close that
+ * then navigates: an entry comes off with `history.back()` a tick after its
+ * owner closes, and a `navigate(-1)` or replace in between would spend itself
+ * on that entry. With no entry on top (desktop) it runs at once. The caller
+ * closes every owner of an entry, or it never runs.
+ */
+export function afterBackCloses(fn: () => void) {
+  if (window.history.state?.[KEY] == null) return fn()
+  const onPop = () => {
+    if (window.history.state?.[KEY] != null) return
+    window.removeEventListener('popstate', onPop)
+    fn()
+  }
+  window.addEventListener('popstate', onPop)
+}
+
+/** `blocked`: read when back is pressed; while true, back does nothing (the entry is put back). */
+export function useBackCloses(open: boolean, onClose: () => void, blocked?: () => boolean) {
   const close = useRef(onClose)
+  const block = useRef(blocked)
   useEffect(() => {
     close.current = onClose
+    block.current = blocked
   })
   // One entry per opening, kept across StrictMode's effect re-run.
   const id = useRef<number | null>(null)
@@ -60,9 +82,16 @@ export function useBackCloses(open: boolean, onClose: () => void) {
       window.history.pushState({ ...window.history.state, [KEY]: id.current }, '')
     }
     const mine = id.current
-    owned.add(mine)
-    const onPop = () => {
-      if (window.history.state?.[KEY] === mine) return
+    const href = window.location.href
+    const isBlocked = () => !!block.current?.()
+    owned.set(mine, isBlocked)
+    // The entry landed on, not the top now: a blocked one above may have put its own back already.
+    const onPop = (e: PopStateEvent) => {
+      if (e.state?.[KEY] === mine) return
+      if (isBlocked() && window.location.href === href) {
+        window.history.pushState({ ...window.history.state, [KEY]: mine }, '')
+        return
+      }
       id.current = null
       close.current()
     }
@@ -82,8 +111,8 @@ export function useBackCloses(open: boolean, onClose: () => void) {
 }
 
 /** `useBackCloses` at phone width only (S76): the phone dialogs, as the task sheet does. */
-export function usePhoneBackCloses(open: boolean, onClose: () => void) {
+export function usePhoneBackCloses(open: boolean, onClose: () => void, blocked?: () => boolean) {
   const theme = useTheme()
   const phone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
-  useBackCloses(open && phone, onClose)
+  useBackCloses(open && phone, onClose, blocked)
 }

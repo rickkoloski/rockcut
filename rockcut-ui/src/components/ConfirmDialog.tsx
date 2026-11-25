@@ -8,6 +8,7 @@ import {
   DialogContentText,
   DialogTitle,
 } from '@mui/material'
+import { usePhoneBackCloses } from '../hooks/useBackCloses'
 import { SubmitGate } from '../lib/submitGate'
 
 interface ConfirmDialogProps {
@@ -55,6 +56,9 @@ export default function ConfirmDialog({
     })
   const confirm = () => run(onConfirm)
   const working = loading || busy
+  // D63 (6260): phone Back closes it, as Escape does (never `onCancel`'s answer),
+  // and waits while a press is in flight.
+  usePhoneBackCloses(open, onClose, () => !!loading || gate.current.inFlight)
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-testid={testId}>
       <DialogTitle>{title}</DialogTitle>

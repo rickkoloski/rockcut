@@ -5,6 +5,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
+import { saveRefused } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 
@@ -72,7 +73,7 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
       }
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      setError(lot ? saveRefused(err, 'lot') : parseApiError(err))
     }
   }
 

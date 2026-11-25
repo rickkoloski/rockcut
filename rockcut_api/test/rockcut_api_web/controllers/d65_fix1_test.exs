@@ -136,7 +136,7 @@ defmodule RockcutApiWeb.D65Fix1Test do
   end
 
   describe "gap 11: a lot's pack name is its category's" do
-    test "a fruit or Finings lot in a sack is refused (create, edit); a pail and a tub are taken",
+    test "a fruit or Process Aids lot in a sack is refused (create, edit); a pail and a tub are taken",
          c do
       puree =
         product!(c, %{"ingredient_id" => c.strawberry.id, "form" => "Purée", "unit" => "gal"})

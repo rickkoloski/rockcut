@@ -41,7 +41,7 @@ test('P104: Brewery → Production is in the nav; the Gantt reads; Check off ask
   const b = await ale('Galactic', 2)
   const fdh = stepOf(b, 'FDH')
   await page.goto('/tasks/brewery')
-  // The Brewery heading opens to its one page.
+  // The Brewery heading opens to its pages (D63: Settings too).
   const nav = page.locator('.MuiDrawer-paper:visible')
   await nav.getByText('Brewery', { exact: true }).click()
   await nav.getByText('Production', { exact: true }).click()

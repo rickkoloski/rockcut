@@ -199,7 +199,11 @@ defmodule RockcutApi.Yeast.Brinks do
 
   ## History
 
-  @doc "A brink's records, newest first, each with its entries (oldest first) and counts."
+  @doc """
+  A brink's records, newest first, each with its entries (oldest first) and
+  counts. A voided record with no entries (an un-checked or undone harvest)
+  isn't listed (D63, 6261).
+  """
   def history(%Brink{} = brink) do
     records =
       Repo.all(
@@ -211,6 +215,7 @@ defmodule RockcutApi.Yeast.Brinks do
             counts: ^from(c in Count, order_by: [c.counted_on, c.id], preload: :entered_by)
           ]
       )
+      |> Enum.reject(&(&1.status == "voided" and &1.entries == []))
 
     entries = Enum.flat_map(records, & &1.entries)
     names = product_names(Enum.flat_map(entries, &(&1.product_ids || [])))

@@ -224,10 +224,14 @@ for {child, names} <- grain_child_of,
   )
 end
 
-# D65 §4.1: Other Consumables' two children (no Acids). Like Grains'
-# children, a child renamed or added in Categories is left alone.
-for {name, sort_order} <- [{"Water Salts", 0}, {"Finings", 1}],
-    is_nil(Repo.get_by(IngredientCategory, name: name)) do
+# D65 §4.1: Other Consumables' two children (no Acids; D63 §5.1: Finings is
+# Process Aids). Like Grains' children, a child renamed or added in
+# Categories is left alone.
+for {name, sort_order} <- [{"Water Salts", 0}, {"Process Aids", 1}],
+    not Repo.exists?(
+      from c in IngredientCategory,
+        where: fragment("lower(?)", c.name) == ^String.downcase(name)
+    ) do
   Repo.insert!(%IngredientCategory{
     name: name,
     sort_order: sort_order,
@@ -237,19 +241,19 @@ end
 
 consumable_child_ids =
   Repo.all(from c in IngredientCategory, where: c.parent_id == ^category_ids["consumables"])
-  |> Map.new(fn c -> {c.name, c.id} end)
+  |> Map.new(fn c -> {String.downcase(c.name), c.id} end)
 
 # D65 A8 (migration 6's rule): a Whirlfloc still at the top of Other
-# Consumables moves into Finings, so the insert below doesn't add a second.
-if finings = consumable_child_ids["Finings"] do
+# Consumables moves into Process Aids, so the insert below doesn't add a second.
+if process_aids = consumable_child_ids["process aids"] do
   unless Repo.exists?(
-           from i in Ingredient, where: i.name == "Whirlfloc" and i.category_id == ^finings
+           from i in Ingredient, where: i.name == "Whirlfloc" and i.category_id == ^process_aids
          ) do
     Repo.update_all(
       from(i in Ingredient,
         where: i.name == "Whirlfloc" and i.category_id == ^category_ids["consumables"]
       ),
-      set: [category_id: finings]
+      set: [category_id: process_aids]
     )
   end
 end
@@ -268,8 +272,8 @@ other_ingredients =
     {category_ids["yeast"], "Chico Ale", "Clean American ale yeast (Fermentis)"},
     # Sugars and Extracts (D65: renamed from "Corn Sugar (Dextrose)")
     {category_ids["sugars"], "Dextrose (Corn Sugar)", "Priming sugar, lightens body"},
-    # Other Consumables → Finings (D65 A8; Irish Moss removed)
-    {consumable_child_ids["Finings"], "Whirlfloc", "Tablet fining, aids clarity"}
+    # Other Consumables → Process Aids (D65 A8; Irish Moss removed)
+    {consumable_child_ids["process aids"], "Whirlfloc", "Tablet fining, aids clarity"}
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -392,6 +396,11 @@ Code.eval_file(Path.join(__DIR__, "seeds/d65_reference.exs"))
 # D64 Amendment: the labs, the 11 yeast strains and products, offers and the
 # two Fermentis prices (no lots). After the grain reference (BSG).
 Code.eval_file(Path.join(__DIR__, "seeds/d64_reference.exs"))
+
+# D63 §5.1, §5.2: the four process aids with their offers, a product for each
+# of the seven spices, and EKG with its placeholder lot (no prices). After the
+# D64 reference (White Labs).
+Code.eval_file(Path.join(__DIR__, "seeds/d63_reference.exs"))
 
 # Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the

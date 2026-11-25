@@ -176,6 +176,11 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/ingredient_lots/:id"},
     {:put, "/api/ingredient_lots/:id"},
     {:delete, "/api/ingredient_lots/:id"},
+    # D63 §4.2: a hop's use order: no device.
+    {:get, "/api/hop_use_lists"},
+    {:put, "/api/hop_use_lists/order"},
+    # D63 §6.2: the brewery's settings are changed on a personal account.
+    {:put, "/api/brewery_settings"},
     # D60 grain catalog and inventory: no device (spec decision 12).
     {:get, "/api/parties"},
     {:get, "/api/parties/:id"},
@@ -382,6 +387,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   @brewery_device_ok [
     # D50: the Plan batch and batch dialogs' brand list.
     {:get, "/api/brands"},
+    # D63 §6.2: the brewery's settings, view only (the PUT is in `@denied`).
+    {:get, "/api/brewery_settings"},
     {:get, "/api/production/tanks"},
     {:get, "/api/production/phases"},
     {:get, "/api/production/step_types"},

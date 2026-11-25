@@ -642,6 +642,70 @@ test.describe('fix cycle 1 (DEV QA)', () => {
     expect((await (await (await apiAs('bartender1')).get(`/api/idea_boards/bar/cards/${card.id}`)).json()).data.description).toBeNull()
   })
 
+  // D63 (6260): both confirms close the card, which navigates; at 360 px their
+  // own back entry comes off first, so the card really closes and Back doesn't reopen it.
+  for (const how of ['opened from the board', 'opened from a link'] as const) {
+    test(`D63 at 360 px: Discard, and Delete for good, close the card (${how}); Back closes only the confirm`, async ({ browser }) => {
+      test.slow()
+      const list = await tempList('barMgr', 'bar', 'D63')
+      const ctx = await browser.newContext({ storageState: authFile('barMgr'), viewport: { width: 360, height: 780 }, hasTouch: true, isMobile: true })
+      const page = await ctx.newPage()
+      const dialog = page.getByTestId('idea-card-dialog')
+      const open = async (id: number) => {
+        await page.goto('/')
+        if (how === 'opened from the board') {
+          await openIdeas(page, BAR)
+          await page.getByTestId(`idea-list-tab-${list.id}`).click()
+          await cardFace(page, id).click()
+        } else await page.goto(`/boards/bar/cards/${id}`)
+        await expect(dialog.getByTestId('idea-card-description-input')).toBeVisible()
+      }
+      const closed = async () => {
+        await expect(dialog).toHaveCount(0)
+        await expect(page).toHaveURL(/\/boards\/bar$/)
+        await page.waitForLoadState('networkidle')
+        await expect(page).toHaveURL(/\/boards\/bar$/)
+        expect(await page.evaluate(() => window.history.state?.rockcutBackCloses ?? null)).toBeNull()
+        // Back goes on to where they came from: the card isn't underneath.
+        await page.goBack()
+        await expect(page).not.toHaveURL(/\/cards\//)
+        await expect(dialog).toHaveCount(0)
+      }
+
+      const first = await tempCard('barMgr', 'bar', list.id, 'D63 discard')
+      await open(first.id)
+      await dialog.getByTestId('idea-card-description-input').fill('Half a thought')
+      const ask = page.getByRole('dialog', { name: 'Discard your changes to the description?' })
+      await dialog.getByTestId('idea-card-close').click()
+      await expect(ask).toBeVisible()
+      await page.goBack()
+      await expect(ask).toHaveCount(0)
+      await expect(dialog).toBeVisible()
+      await page.goBack()
+      await expect(ask).toBeVisible()
+      await ask.getByRole('button', { name: 'Discard' }).click()
+      await closed()
+
+      // Only an archived card can be deleted, and the board doesn't show those: from its link.
+      if (how === 'opened from a link') {
+        const card = await tempCard('barMgr', 'bar', list.id, 'D63 delete')
+        expect((await (await apiAs('barMgr')).post(`/api/idea_boards/bar/cards/${card.id}/archive`)).ok()).toBe(true)
+        await page.goto('/')
+        await page.goto(`/boards/bar/cards/${card.id}`)
+        await dialog.getByTestId('idea-card-delete').click()
+        const confirm = page.getByRole('dialog', { name: 'Delete this card for good?' })
+        await expect(confirm).toBeVisible()
+        await page.goBack()
+        await expect(confirm).toHaveCount(0)
+        await expect(dialog).toBeVisible()
+        await dialog.getByTestId('idea-card-delete').click()
+        await confirm.getByRole('button', { name: 'Delete for good' }).click()
+        await closed()
+      }
+      await ctx.close()
+    })
+  }
+
   test('gap 3: Enter on "Add the label" creates the label and puts it on the card', async ({ page }) => {
     const list = await tempList('bartender1', 'bar', 'G3')
     const card = await tempCard('bartender1', 'bar', list.id, 'Labelled by Enter')

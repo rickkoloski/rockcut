@@ -13,3 +13,10 @@ export const retryUnless404 = (count: number, err: unknown) => httpStatus(err) !
 
 /** D64 lead decisions 9 (gap 25): why a write was refused; `gone` when its row isn't there any more (404). */
 export const goneOr = (err: unknown, gone: string) => (httpStatus(err) === 404 ? gone : parseApiError(err))
+
+/**
+ * D63 (local QA recheck 1): why a save in an edit dialog was refused. The API
+ * answers 404 only for the row in the address; a missing supplier, ingredient
+ * or category it names is a 422 with its own sentence.
+ */
+export const saveRefused = (err: unknown, noun: string) => goneOr(err, `This ${noun} was deleted, so it can't be saved.`)

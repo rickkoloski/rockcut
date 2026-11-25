@@ -519,6 +519,11 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :read, :yeast_settings), do: member_of?(user, "brewery")
   def can?(%User{} = user, :manage, :yeast_settings), do: role_in(user, "brewery") == :manager
 
+  # D63 §6.2 the brewery's settings, the same rule as the yeast settings. The
+  # brewhouse device reads them (`Authz.Device`).
+  def can?(%User{} = user, :read, :brewery_settings), do: member_of?(user, "brewery")
+  def can?(%User{} = user, :manage, :brewery_settings), do: role_in(user, "brewery") == :manager
+
   # D64 §8 (A8): a yeast count (and, from Stop 3, an entry) is changed or
   # deleted by the person who entered it or a Brewery manager; owners pass
   # above. The record's own rules (a later pitch locks a count) are

@@ -107,7 +107,7 @@ test('gap 5: a lot pitch is taken back from the product page and from the batch 
   await expect(page.getByTestId('quantity-toggle')).toHaveCount(0)
   await expect(page.getByRole('columnheader', { name: '$/brick' })).toHaveCount(2) // the offers' one and the lots' one
   await page.getByTestId(`offer-row-${offer.id}`).getByRole('button', { name: 'Edit offer' }).click()
-  await expect(page.getByRole('dialog')).toContainText('"brick · 1 (5 lb)"')
+  await expect(page.getByRole('dialog')).toContainText('"brick · 1 (500 g)"')
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
 
   await page.getByTestId(`movement-remove-${first}`).click()
