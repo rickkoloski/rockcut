@@ -299,3 +299,20 @@ API's rule stands: a count's extra goes to the newest lot that isn't expired). G
 
 Seeded rows read only. No migration. Land when the gates in the Stop 0 "Done when" pass (the Playwright specs
 you touched, plus the whole `ingredients` project on your scratch copy). Don't land until I say. Report as before.
+
+---
+
+# Fix cycle 2 (local QA recheck 1)
+
+2026-11-25 · lead. The recheck passed fix cycle 1. One item:
+
+1. **Saving a row someone else deleted** says "Request failed with status code 404". In the Ingredient
+   Library's edit dialogs (product, ingredient, offer, lot), use D64's `goneOr` with a sentence naming the row:
+   "This product was deleted, so it can't be saved." The dialog and the typing stay, as now. List every edit
+   dialog there you checked and which already did this. A 404 that means something else (a missing supplier,
+   say) must not read as this row being deleted: check what the API answers, and say. One Playwright test for a
+   product at 1366 and 360 px, vitest or Playwright for the others, proved by revert.
+
+No migration. **Land it yourself once vitest, `tsc`, `vite build`, lint (same 8) and the specs you touched
+pass**, then report and stop with no servers of yours running. Recheck gap 5 (a formulas call for a deleted recipe) goes to
+D68: don't touch it.
