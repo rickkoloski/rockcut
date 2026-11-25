@@ -28,20 +28,32 @@ test.describe('owner', () => {
   test.use({ storageState: authFile('owner') })
 
   test('the top row: the gear is in the same place on all seven pages, on the page background', async ({ page }) => {
-    const spots: { path: string; x: number; y: number }[] = []
+    const spots: { path: string; x: number; y: number; wraps: boolean }[] = []
     for (const { path, gear } of PAGES) {
       await page.goto(path)
       const g = page.getByTestId(gear)
       await expect(g).toBeVisible({ timeout: 20_000 })
+      // D63: measured once the row has settled. The library's Grains filters and
+      // its packs toggle come with the categories, and wrap the actions to a second row.
+      if (path === '/ingredients') {
+        for (const id of ['grains-maltster', 'grains-on-hand-only', 'quantity-toggle']) await expect(page.getByTestId(id)).toBeVisible({ timeout: 20_000 })
+      }
       // Not inside a white panel (Paper): straight on the page.
       expect(await g.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " MuiPaper-root ")]').count(), path).toBe(0)
       const b = (await g.boundingBox())!
-      spots.push({ path, x: Math.round(b.x), y: Math.round(b.y) })
+      // The actions are on a row of their own: the gear's row starts below the first control.
+      const wraps = await g.evaluate((el) => {
+        const row = el.parentElement!.parentElement!
+        return el.parentElement!.getBoundingClientRect().top >= row.firstElementChild!.getBoundingClientRect().bottom
+      })
+      spots.push({ path, x: Math.round(b.x), y: Math.round(b.y), wraps })
     }
     for (const s of spots) {
       expect(Math.abs(s.x - spots[0].x), s.path).toBeLessThanOrEqual(2)
-      expect(Math.abs(s.y - spots[0].y), s.path).toBeLessThanOrEqual(2)
+      if (!s.wraps) expect(Math.abs(s.y - spots[0].y), s.path).toBeLessThanOrEqual(2)
     }
+    // Only the library's row may wrap here.
+    expect(spots.filter((s) => s.wraps && s.path !== '/ingredients')).toEqual([])
   })
 
   test('collapsed nav: a section opens its pages as icons below it; the rail stays narrow; hover names them', async ({ page }) => {
