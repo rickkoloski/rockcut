@@ -80,7 +80,7 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
   defp price(offer),
     do: Repo.one(from p in OfferPrice, where: p.offer_id == ^offer.id, select: p.price_per_pack)
 
-  test "twice: 36 + 2 ingredients, 29 products, 30 offers, 26 priced, no lots; grain and hops unchanged" do
+  test "twice: 36 + 2 ingredients, 29 products, 30 offers, 26 priced, no lots, and D63's rows; grain and hops unchanged" do
     seed!()
     first = counts()
 
@@ -106,7 +106,15 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
     assert counts() == first
 
     # 36 new plus the two the base seed has (Dextrose (Corn Sugar), Whirlfloc).
-    assert first == %{ingredients: 38, products: 29, offers: 30, priced: 26, lots: 0}
+    # D63 §5: four process aids (an offer each), Allspice and Chamomile, and a
+    # product for each of seven spices.
+    assert first == %{
+             ingredients: 38 + 4 + 2,
+             products: 29 + 4 + 7,
+             offers: 30 + 4,
+             priced: 26,
+             lots: 0
+           }
 
     assert Repo.aggregate(
              from(p in Product,
@@ -124,7 +132,8 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
              :count
            ) == grain
 
-    assert hops == 27 and grain == 44
+    # D63: Pink Boots '24 and EKG.
+    assert hops == 27 + 2 and grain == 44
   end
 
   test "spot checks: Gypsum, Strawberry, Black Strap Molasses, Whirlfloc T, SoNature Lime, the spices" do
@@ -146,10 +155,14 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
 
     assert Decimal.eq?(price(bag), Decimal.new("32.00"))
 
+    # D63 §5.4: calcium chloride's product is Anhydrous's; Hydrous has none.
+    cacl = product!("Calcium Chloride (Anhydrous)", "Flake")
+    assert Decimal.eq?(price(hd(cacl.offers)), Decimal.new("77.00"))
+
     refute Repo.exists?(
              from p in Product,
                join: i in assoc(p, :ingredient),
-               where: i.name == "Calcium Chloride (Anhydrous)"
+               where: i.name == "Calcium Chloride (Hydrous)"
            )
 
     strawberry = product!("Strawberry", "Purée")
@@ -180,7 +193,7 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
     assert Repo.aggregate(from(i in Ingredient, where: i.name == "Dextrose (Corn Sugar)"), :count) ==
              1
 
-    assert Decimal.eq?(feature(dextrose, "extract_fgdb").value, 91)
+    assert Decimal.eq?(feature(dextrose, "extract_fgdb").value, Decimal.new("91.3"))
 
     whirlfloc = product!("Whirlfloc", "Tablet")
     assert {whirlfloc.name, whirlfloc.unit, whirlfloc.manufacturer_party_id} == {"T", "each", nil}
@@ -193,7 +206,8 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
     assert Decimal.eq?(price(tub), Decimal.new("92.00"))
 
     lime = product!("Lime", "Purée", maker: nil)
-    assert feature(lime, "brix") == nil
+    # D63 §5.3.
+    assert Decimal.eq?(feature(lime, "brix").value, 8)
     [pail] = lime.offers
 
     assert {pail.supplier.name, Decimal.to_integer(pail.pack_size), price(pail)} ==
@@ -212,7 +226,7 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
       )
 
     assert "Timut Pepper" in spices and "Peppermint Leaf" in spices and
-             length(Enum.reject(spices, &String.starts_with?(&1, "["))) == 10
+             length(Enum.reject(spices, &String.starts_with?(&1, "["))) == 12
   end
 
   test "an edit made on the screens sticks: a price, a formula and a product are left alone" do

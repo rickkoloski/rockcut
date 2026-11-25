@@ -13,13 +13,13 @@
 # reference (BSG is there already) and the feature types.
 #
 # Source: `docs/current_work/reference/d62_hop_products.csv` (27 products,
-# ranges checked by Matt; Pink Boots Blend has none) and
-# `d62_hops_matt_2026-11-19.csv` (29 rows; EKG is left out until its lot #
-# and alpha are known). Both are git-excluded, so the rows are copied here.
-# Variety names drop the crop labels ("Cascade (23)" is Cascade);
-# "Hallertau Mittelfrueh" is Hallertau Mittelfrüh, "Pink Boots" is Pink
-# Boots Blend; Citra (24-cryo) is the Cryo product, every other lot T90
-# Pellet.
+# ranges checked by Matt; Pink Boots has none) and
+# `d62_hops_matt_2026-11-19.csv` (29 rows; EKG is in the D63 reference). Both
+# are git-excluded, so the rows are copied here. Variety names drop the crop
+# labels ("Cascade (23)" is Cascade); "Hallertau Mittelfrueh" is Hallertau
+# Mittelfrüh. "Pink Boots" is one variety per year, '23 and '24 (D63 §5.5), so
+# the rows here are 28 products. Citra (24-cryo) is the Cryo product, every
+# other lot T90 Pellet.
 
 import Ecto.Query, only: [from: 2]
 
@@ -99,7 +99,8 @@ products = [
    "1.0", "1.2"},
   {"Northern Brewer", "Lupulin Exchange", "T90 Pellet", "Germany", "6.0", "10.0", "3.0", "5.0",
    "1.5", "2.0"},
-  {"Pink Boots Blend", "Yakima Chief Hops", "T90 Pellet", "USA", nil, nil, nil, nil, nil, nil},
+  {"Pink Boots '23", "Yakima Chief Hops", "T90 Pellet", "USA", nil, nil, nil, nil, nil, nil},
+  {"Pink Boots '24", "Yakima Chief Hops", "T90 Pellet", "USA", nil, nil, nil, nil, nil, nil},
   {"Rakau", "Michigan Hop Alliance", "T90 Pellet", "New Zealand", "10.0", "11.0", "5.0", "6.0",
    "2.0", "2.2"},
   {"Saaz", "BSG", "T90 Pellet", "Czech Republic", "2.5", "4.5", "4.0", "6.0", "0.4", "0.8"},
@@ -135,8 +136,8 @@ lots = [
   {"Nectaron", "Lupulin Exchange", "T90 Pellet", "24-492", 2024, "14.1", "7.0"},
   {"Nelson Sauvin", "Lupulin Exchange", "T90 Pellet", "P92-HNNEL2005", 2022, "11.7", "11.0"},
   {"Northern Brewer", "Lupulin Exchange", "T90 Pellet", "OHZT-25-0088", 2025, "7.90", "20.6"},
-  {"Pink Boots Blend", "Yakima Chief Hops", "T90 Pellet", "P92-IUPBB3182", 2023, "12.5", "8.5"},
-  {"Pink Boots Blend", "Yakima Chief Hops", "T90 Pellet", "P92-JUPBB4199", 2024, "14.2", "2.9"},
+  {"Pink Boots '23", "Yakima Chief Hops", "T90 Pellet", "P92-IUPBB3182", 2023, "12.5", "8.5"},
+  {"Pink Boots '24", "Yakima Chief Hops", "T90 Pellet", "P92-JUPBB4199", 2024, "14.2", "2.9"},
   {"Rakau", "Michigan Hop Alliance", "T90 Pellet", "PM21-L008-RKU", 2021, "9.8", "11.0"},
   {"Saaz", "BSG", "T90 Pellet", "BSG-SAAZ-23", 2023, "2.5", "14.6"},
   {"Saphir", "Lupulin Exchange", "T90 Pellet", "OHZT-25-0023", 2025, "3.9", "33.1"},
@@ -149,6 +150,43 @@ lots = [
 feature_ids = Repo.all(FeatureType) |> Map.new(fn f -> {f.key, f.id} end)
 
 # Hops has no children: a variety is the ingredient of that name on Hops.
+# D63 §5.5: Pink Boots is one variety per year. When its migration left Pink
+# Boots Blend alone, or left the 2024 lot with '23, the year's variety and lot
+# aren't added: the lot is on another hop already.
+hop_exists? = fn name ->
+  Repo.exists?(
+    from i in Ingredient,
+      where:
+        i.category_id == ^hops_category_id and
+          fragment("lower(?)", i.name) == ^String.downcase(name)
+  )
+end
+
+lot_elsewhere? = fn number, variety ->
+  Repo.exists?(
+    from l in IngredientLot,
+      join: i in Ingredient,
+      on: i.id == l.ingredient_id,
+      where:
+        i.category_id == ^hops_category_id and i.name != ^variety and
+          fragment("lower(?)", l.lot_number) == ^String.downcase(number)
+  )
+end
+
+skipped =
+  for {variety, number} <- [
+        {"Pink Boots '23", "P92-IUPBB3182"},
+        {"Pink Boots '24", "P92-JUPBB4199"}
+      ],
+      hop_exists?.("Pink Boots Blend") or lot_elsewhere?.(number, variety),
+      do: variety
+
+products = Enum.reject(products, &(elem(&1, 0) in skipped))
+lots = Enum.reject(lots, &(elem(&1, 0) in skipped))
+
+# The supplier's own name, when it isn't the variety's (D63 §5.5).
+order_names = %{"Pink Boots '23" => "Pink Boots Blend", "Pink Boots '24" => "Pink Boots Blend"}
+
 hop_ids =
   products
   |> Enum.map(&elem(&1, 0))
@@ -192,7 +230,7 @@ hop_ids =
                 origin: origin
               })
 
-            # Pink Boots Blend has no published range: no rows at all.
+            # Pink Boots has no published range: no rows at all.
             for {key, low, high} <- [
                   {"alpha_acid_pct", alpha_low, alpha_high},
                   {"beta_acid_pct", beta_low, beta_high},
@@ -217,7 +255,7 @@ hop_ids =
         Repo.insert!(%SupplierOffer{
           product_id: product.id,
           supplier_party_id: company_id,
-          order_name: variety,
+          order_name: Map.get(order_names, variety, variety),
           pack_name: pack_name,
           pack_size: pack_size,
           # Milled/whole is grain's; a hop offer has no form (lead decisions 1, gap 3).

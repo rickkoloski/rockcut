@@ -1273,7 +1273,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   @d65_seed [
     {"Peach", "fruits", "Purée", "gal", "pail", "5", "45.00", "12.5"},
     {"Rice Syrup Solids", "sugars", "Dry", "lb", "bag", "50", "62.50", "75"},
-    {"Fining Tablets", "Finings", "Tablet", "each", "tub", "872", "92.00", "600"}
+    {"Fining Tablets", "Process Aids", "Tablet", "each", "tub", "872", "92.00", "600"}
   ]
 
   defp seed_d65_inventory(u, today) do
@@ -1284,10 +1284,12 @@ defmodule RockcutApi.Seeds.Synthetic do
       for {name, where, form, unit, pack, size, price, on_hand} <- @d65_seed do
         category_id =
           case where do
-            "Finings" ->
+            "Process Aids" ->
               Repo.one(
                 from(c in IngredientCategory,
-                  where: c.parent_id == ^consumables.id and c.name == "Finings",
+                  where:
+                    c.parent_id == ^consumables.id and
+                      fragment("lower(?)", c.name) == "process aids",
                   select: c.id
                 )
               )
