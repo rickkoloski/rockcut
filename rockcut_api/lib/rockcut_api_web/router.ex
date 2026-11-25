@@ -234,6 +234,9 @@ defmodule RockcutApiWeb.Router do
     post "/supplier_offers/:id/prices", SupplierOfferController, :create_price
     resources "/inventory_movements", InventoryMovementController, only: [:index, :create]
 
+    # D63 §6.2: the brewery's settings (the GET is the brewhouse device's too, below).
+    put "/brewery_settings", BrewerySettingsController, :update
+
     # D64 yeast: the Strain Type list (yeast settings) and a pitch of purchased yeast
     resources "/yeast/strain_types", YeastStrainTypeController,
       only: [:index, :create, :update, :delete]
@@ -465,6 +468,8 @@ defmodule RockcutApiWeb.Router do
     pipe_through [:api, :device_allowed, :brewery]
 
     get "/brands", BrandController, :index
+    # D63 §6.2: the brewery's settings, view only there (the PUT is people's).
+    get "/brewery_settings", BrewerySettingsController, :show
   end
 
   # D46 setup changes (tanks, phases, step types, templates): people only
