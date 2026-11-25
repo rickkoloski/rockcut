@@ -6,13 +6,18 @@ import { Children, Fragment, isValidElement, useEffect, useRef, useState, type R
 import { Badge, Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Switch, Tooltip } from '@mui/material'
 import { Check, ExpandLess, ExpandMore, Settings } from '@mui/icons-material'
 
-/** The page's top row: `children` on the left, `end` (actions, then the gear) on the right. */
+/**
+ * The page's top row: `children` on the left, `end` (actions, then the gear)
+ * on the right. D63: from `sm` up, when `end` wraps to a row of its own, it
+ * stays on the right (the spacer stays on the first row). On a phone it wraps
+ * to the left, as the controls above it.
+ */
 export function PageToolbar({ children, end, testid }: { children?: ReactNode; end?: ReactNode; testid?: string }) {
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, mb: 2 }} data-testid={testid}>
       {children}
       <Box sx={{ flex: 1 }} />
-      {end && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>{end}</Box>}
+      {end && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, ml: { sm: 'auto' } }}>{end}</Box>}
     </Box>
   )
 }

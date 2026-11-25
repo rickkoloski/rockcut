@@ -339,7 +339,7 @@ defmodule RockcutApiWeb.D65Stop2Test do
       assert hd(order["lines"])["offer"]["pack_note"] == "5 lb"
     end
 
-    test "Water Salts takes bag, pail, tub; Finings jug, bottle, bag, tub; another child the union",
+    test "Water Salts takes bag, pail, tub; Process Aids jug, bottle, bag, tub; another child the union",
          c do
       salt = product!(c, %{"ingredient_id" => c.gypsum.id, "form" => "Powder"})
 

@@ -251,7 +251,7 @@ defmodule RockcutApi.IngredientFixtures do
 
   @doc """
   D65: on `grain_catalog!/0`'s data, the four D65 categories (Other
-  Consumables with Water Salts and Finings), the ingredients Strawberry,
+  Consumables with Water Salts and Process Aids), the ingredients Strawberry,
   Cinnamon, Vanilla Extract, Dextrose (Corn Sugar), Black Strap Molasses,
   Calcium Sulfate (Gypsum) and Whirlfloc, and Oregon Fruit (manufacturer).
   """
@@ -261,7 +261,10 @@ defmodule RockcutApi.IngredientFixtures do
     sugars = keyed_category!("Sugars and Extracts", "sugars")
     consumables = keyed_category!("Other Consumables", "consumables")
     salts = Repo.insert!(%IngredientCategory{name: "Water Salts", parent_id: consumables.id})
-    finings = Repo.insert!(%IngredientCategory{name: "Finings", parent_id: consumables.id})
+
+    process_aids =
+      Repo.insert!(%IngredientCategory{name: "Process Aids", parent_id: consumables.id})
+
     ingredient = &Repo.insert!(%Ingredient{name: &1, category_id: &2.id})
 
     # D65 Stop 2 (migration `d65_features_and_pack_note`'s rows): Fruits'
@@ -288,14 +291,14 @@ defmodule RockcutApi.IngredientFixtures do
       sugars: sugars,
       consumables: consumables,
       salts: salts,
-      finings: finings,
+      process_aids: process_aids,
       strawberry: ingredient.("Strawberry", fruits),
       cinnamon: ingredient.("Cinnamon", spices),
       vanilla: ingredient.("Vanilla Extract", spices),
       dextrose: ingredient.("Dextrose (Corn Sugar)", sugars),
       molasses: ingredient.("Black Strap Molasses", sugars),
       gypsum: ingredient.("Calcium Sulfate (Gypsum)", salts),
-      whirlfloc: ingredient.("Whirlfloc", finings),
+      whirlfloc: ingredient.("Whirlfloc", process_aids),
       oregon: party!("Oregon Fruit", ~w(manufacturer))
     }
   end

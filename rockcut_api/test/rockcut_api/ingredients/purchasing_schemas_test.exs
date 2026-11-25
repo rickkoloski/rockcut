@@ -4,7 +4,7 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
   ranges, statuses, unique constraints) and the new fields on parties,
   products and movements. The business rules are Stage 2's.
   """
-  use RockcutApi.DataCase, async: true
+  use RockcutApi.DataCase, async: false
 
   import RockcutApi.IngredientFixtures
 

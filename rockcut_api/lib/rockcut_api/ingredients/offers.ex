@@ -218,7 +218,7 @@ defmodule RockcutApi.Ingredients.Offers do
 
   # D65 §4.2: a new offer of a D65 product with no pack named starts with
   # its unit's usual pack (lb → bag, gal → pail, fl oz → jug, oz → bag,
-  # each → tub), when the category takes it, else the category's first
+  # each → tub, g → bag, mL → bottle), when the category takes it, else the category's first
   # (lead decisions 1, gap 3: a fl oz spice → bottle).
   # D64 §4.1: a yeast offer starts with its form's pack (Dry brick, Liquid pitchable).
   defp default_pack(attrs, "yeast", _category, product_id) do

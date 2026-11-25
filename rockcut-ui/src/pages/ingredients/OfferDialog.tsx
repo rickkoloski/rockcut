@@ -4,11 +4,12 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
+import { saveRefused } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, packSizeLabel, parseDecimal, unitDecimals } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { isD65Key } from '../../lib/ingredientFeatures'
-import { defaultPackName, offerPackText } from '../../lib/purchasing'
+import { defaultPackName, packNoteHelper } from '../../lib/purchasing'
 import type { IngredientCategory, Party, SupplierOffer } from '../../lib/types'
 
 interface OfferDialogProps {
@@ -89,13 +90,11 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       else await create.mutateAsync(payload)
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      setError(offer ? saveRefused(err, 'offer') : parseApiError(err))
     }
   }
 
-  // Lead decisions 6: as the saved offer reads, "brick · 1 (500 g)".
-  const packExample = { pack_name: packName, pack_note: packNote.trim() || '5 lb' }
-  const packHint = size.ok && size.value ? offerPackText({ ...packExample, pack_size: size.value }, unit) : `${packName} · … ${unit} (${packExample.pack_note})`
+  const packHint = packNoteHelper({ pack_name: packName, pack_size: size.ok ? size.value : null, pack_note: packNote }, unit)
 
   return (
     <FormDialog
@@ -164,7 +163,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       {d65 && (
         <TextField
           label="Pack note"
-          helperText={`Optional, shown with the pack: "${packHint}"`}
+          helperText={packHint}
           value={packNote}
           onChange={(e) => setPackNote(e.target.value)}
           fullWidth

@@ -188,7 +188,7 @@ test.describe('purchasing', () => {
     const dex = await makeD65Ingredient('Dextrose', 'sugars')
     const sugar = await makeD65Product(dex.id, 'Dry', null, { features: { extract_fgdb: '91' } })
     const sugarOffer = await d65Offer(sugar.id, supplier.id, 'bag', '50', '45.50')
-    const wfIngredient = await makeD65Ingredient('Whirlfloc', 'Finings')
+    const wfIngredient = await makeD65Ingredient('Whirlfloc', 'Process Aids')
     const wf = await makeD65Product(wfIngredient.id, 'Tablet', 'each', { name: 'T' })
     const tub = await d65Offer(wf.id, supplier.id, 'tub', '872', '92.00', '5 lb')
 
@@ -300,7 +300,7 @@ test.describe('§10 gaps closed in Stop 3', () => {
     test.slow()
     const page = await as(browser, 'brewer2')
     const cacl = await makeD65Ingredient('Calcium Chloride', 'Water Salts')
-    const fining = await makeD65Ingredient('Biofine', 'Finings')
+    const fining = await makeD65Ingredient('Biofine', 'Process Aids')
     const supplier = await makeSupplier('D65 consumables', null)
 
     // Calcium Chloride: Flake, lb is the only unit.
@@ -317,7 +317,7 @@ test.describe('§10 gaps closed in Stop 3', () => {
     await expect(page.getByTestId('product-item')).toContainText('Flake · lb · Water Salts')
 
     // A liquid fining in fl oz; its offer starts as a jug.
-    await page.goto(`/ingredients?category=${await categoryId('Finings')}`)
+    await page.goto(`/ingredients?category=${await categoryId('Process Aids')}`)
     await page.getByTestId('ingredients-add-button').click()
     await page.getByTestId('add-d65-product').click()
     d = page.getByTestId('product-dialog')
@@ -487,7 +487,7 @@ test.describe('edges', () => {
       const plum = await makeD65Ingredient('Plum phone', 'fruits')
       const fruit = await makeD65Product(plum.id, 'Purée', 'lb', { features: { brix: { low: '17', high: '20' } } })
       await makeD65Lot(fruit, '44')
-      const wfi = await makeD65Ingredient('Whirlfloc phone', 'Finings')
+      const wfi = await makeD65Ingredient('Whirlfloc phone', 'Process Aids')
       const wf = await makeD65Product(wfi.id, 'Tablet', 'each', { name: 'T' })
       await makeD65Lot(wf, '1272')
 

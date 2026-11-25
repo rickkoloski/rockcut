@@ -9,7 +9,7 @@ import RangeFields from './RangeFields'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { httpStatus } from '../../lib/notFound'
+import { httpStatus, saveRefused } from '../../lib/notFound'
 import {
   HOP_FORMS,
   draftsFrom,
@@ -147,7 +147,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
 
   const { grains, children } = grainCategories(categories)
   const { category: hopsCategory } = keyedCategories(categories, 'hops')
-  // D65: the category and its children (Other Consumables → Water Salts, Finings), each with its ingredients.
+  // D65: the category and its children (Other Consumables → Water Salts, Process Aids), each with its ingredients.
   const { category: d65Category, children: d65Children } = keyedCategories(categories, key)
   const grainOptions = hops
     ? hopsCategory
@@ -252,7 +252,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
       // Decisions 4: Save and Cancel stay busy until the refetch lands, so a
       // quick close and reopen can't pick up the old version (a second 409).
       if (httpStatus(err) === 409) await refreshAfterConflict(qc)
-      setError(parseApiError(err))
+      setError(product ? saveRefused(err, 'product') : parseApiError(err))
     }
   }
 

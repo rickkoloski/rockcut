@@ -29,7 +29,9 @@ defmodule RockcutApi.Accounts.BoardSettings do
 
     * `quantity_display` — "packs" (packs + loose quantity, e.g. "12 sacks
       22.5 lb"; D62 §3.5, was "sacks") or "lb" (the total in the product's
-      unit; the toggle says Total).
+      unit; the toggle says Total);
+    * `hide_used_up_lots` — whether a hop's use lists leave out the lots with
+      no stock (D63 §4.4, default true).
 
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
   """
@@ -66,9 +68,9 @@ defmodule RockcutApi.Accounts.BoardSettings do
   @row_key ~r/\A(\d{1,18}|unassigned)\z/
 
   @ingredients "ingredients"
-  @ingredients_types %{quantity_display: :string}
-  @ingredients_defaults %{"quantity_display" => "packs"}
-  @ingredients_names ["quantity_display"]
+  @ingredients_types %{quantity_display: :string, hide_used_up_lots: :boolean}
+  @ingredients_defaults %{"quantity_display" => "packs", "hide_used_up_lots" => true}
+  @ingredients_names ["quantity_display", "hide_used_up_lots"]
 
   @doc "The board key the production Gantt's settings are kept under (D56 decision 18)."
   def gantt, do: @gantt

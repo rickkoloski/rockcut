@@ -86,7 +86,7 @@ export default function BatchDetail() {
 
   const deleteMutation = useApiDelete(
     (batchId) => `/api/batches/${batchId}`,
-    { invalidateKeys: [['batches']] },
+    { invalidateKeys: [['batches']], rowKey: (rowId) => ['batch', rowId] },
   );
 
   const [editOpen, setEditOpen] = useState(false);

@@ -567,6 +567,37 @@ defmodule RockcutApiWeb.D64LocalQaTest do
     end
   end
 
+  describe "D63 (6261): voided records in History" do
+    defp history_ids(c) do
+      {200, %{"data" => records}} =
+        req(c.brewer, :get, "/api/yeast/brinks/#{c.tb.id}/history")
+
+      Enum.map(records, & &1["id"])
+    end
+
+    test "an un-checked harvest's empty record isn't listed; the next harvest is", c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest)
+      %{id: voided} = record(c.tb)
+      {200, _} = uncomplete(c, harvest)
+      assert Repo.get!(Harvest, voided).status == "voided"
+      assert history_ids(c) == []
+
+      fill!(c, harvest)
+      assert history_ids(c) == [record(c.tb).id]
+    end
+
+    test "a voided record that still has entries is listed", c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest)
+      record = record(c.tb)
+      Repo.update!(Ecto.Changeset.change(record, status: "voided"))
+
+      assert {200, %{"data" => [%{"status" => "voided", "entries" => [_]}]}} =
+               req(c.brewer, :get, "/api/yeast/brinks/#{c.tb.id}/history")
+    end
+  end
+
   describe "gap 10: un-ticking Clean" do
     test "dirty again since the day it emptied; not with yeast in it; not for an older Clean task",
          c do

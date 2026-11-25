@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, request, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
 import { localInputToUtc } from '../../../src/lib/datetime'
@@ -53,12 +53,27 @@ export function mondayOf(key: string): string {
   return addDays(key, dow === 0 ? -6 : 1 - dow)
 }
 
-/** Open the Scheduler and move `weeks` weeks ahead; resolves when the grid is showing. */
+/**
+ * Open the Scheduler and move `weeks` weeks ahead; resolves when the grid is
+ * showing. D63 (5911, S16): one week at a time, each loaded before the next
+ * click. A burst of clicks left dozens of week loads in flight, and the last
+ * week's came back too late. Each week adds to the test's timeout.
+ */
 export async function openScheduler(page: Page, weeks = 0) {
   await page.goto('/scheduler')
   await expect(page.getByTestId('events-row')).toBeVisible({ timeout: 20_000 })
   const next = page.getByRole('button', { name: 'Next week' })
-  for (let i = 0; i < weeks; i++) await next.click()
+  if (weeks) test.setTimeout(test.info().timeout + weeks * 1_000)
+  for (let i = 1; i <= weeks; i++) {
+    const from = weekMonday(i)
+    const loaded = (path: string) =>
+      page.waitForResponse((r) => {
+        const url = new URL(r.url())
+        return r.request().method() === 'GET' && url.pathname === path && (url.searchParams.get('from') ?? '').startsWith(from)
+      }, { timeout: 20_000 })
+    const loads = [loaded('/api/shifts'), loaded('/api/schedule_events')]
+    await Promise.all([...loads, next.click()])
+  }
   await expect(page.getByTestId(`events-cell-${weekMonday(weeks)}`)).toBeVisible()
 }
 

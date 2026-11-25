@@ -67,7 +67,7 @@ export default function BrandDetail() {
 
   const deleteMutation = useApiDelete(
     (delId) => `/api/brands/${delId}`,
-    { invalidateKeys: [['brands']] },
+    { invalidateKeys: [['brands']], rowKey: (rowId) => ['brand', rowId] },
   );
 
   const { data: estimates } = useRecipeEstimates(['recipes', 'estimates'], recipes.map((r) => r.id));

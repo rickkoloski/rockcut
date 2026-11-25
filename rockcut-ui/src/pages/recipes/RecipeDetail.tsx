@@ -45,7 +45,7 @@ export default function RecipeDetail() {
 
   const deleteMutation = useApiDelete(
     (delId) => `/api/recipes/${delId}`,
-    { invalidateKeys: [['recipes', { brand_id: brandId }]] },
+    { invalidateKeys: [['recipes', { brand_id: brandId }]], rowKey: (rowId) => ['recipe', rowId] },
   );
 
   // D60 gap 7: the grain bill's writes invalidate ['recipe', id], which refreshes this.

@@ -51,6 +51,7 @@ import SportsBarOutlinedIcon from '@mui/icons-material/SportsBarOutlined'
 import BusinessIcon from '@mui/icons-material/BusinessOutlined'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import ForumIcon from '@mui/icons-material/ForumOutlined'
+import TuneIcon from '@mui/icons-material/TuneOutlined'
 import TagIcon from '@mui/icons-material/TagOutlined'
 import HistoryIcon from '@mui/icons-material/HistoryOutlined'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -79,6 +80,7 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
+import BrewerySettingsPage from './pages/brewery/BrewerySettingsPage'
 import GanttPage from './pages/production/Gantt/GanttPage'
 import TanksPage from './pages/production/TanksPage'
 import ListsPage from './pages/production/ListsPage'
@@ -161,6 +163,7 @@ const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Production', path: '/brewery/production', icon: <FermentersIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <BarleyIcon /> },
+  { label: 'Settings', path: '/brewery/settings', icon: <TuneIcon /> },
 ]
 
 // Per-department heading metadata, keyed by the department key from capabilities.modules.
@@ -171,9 +174,9 @@ const TAPROOM_PAGES: NavLeaf[] = [
 ]
 
 // D40: the department pages a shared tablet can open (its Tasks board is the
-// top-level Tasks). D50: the brewhouse device's Production; only a device at
-// home in the Brewery has the Brewery heading at all.
-const DEVICE_PAGES = ['/taproom/beer-board', '/brewery/production']
+// top-level Tasks). D50: the brewhouse device's Production (D63: and Settings,
+// view only); only a device at home in the Brewery has the Brewery heading at all.
+const DEVICE_PAGES = ['/taproom/beer-board', '/brewery/production', '/brewery/settings']
 
 // No `owners` entry on purpose (D59 §4.4): Owners has no nav heading; its board
 // and channel are reached through Tasks, Boards and Messages.
@@ -277,6 +280,7 @@ function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUser
           <Route path="/brewery/production/lists" element={<ListsPage />} />
           <Route path="/brewery/production/templates" element={<TemplatesPage />} />
           <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
+          <Route path="/brewery/settings" element={<BrewerySettingsPage />} />
           <Route path="/brands" element={<BrandsList />} />
           <Route path="/brands/:id" element={<BrandDetail />} />
           <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
@@ -1001,6 +1005,8 @@ function App() {
                   <Route path="/brewery/production/lists" element={<ListsPage />} />
                   <Route path="/brewery/production/templates" element={<TemplatesPage />} />
                   <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
+                  {/* D63: the brewery's settings, view only. */}
+                  <Route path="/brewery/settings" element={<BrewerySettingsPage />} />
                 </>
               )}
               {/* D40: its home board only (/api/me lists just that one; any other goes there). */}

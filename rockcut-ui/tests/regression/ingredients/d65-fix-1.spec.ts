@@ -53,7 +53,7 @@ async function lot(productId: number, supplierId: number, pack: string, size: st
 }
 
 async function tabletProduct(label: string) {
-  const ingredient = await makeD65Ingredient(label, 'Finings')
+  const ingredient = await makeD65Ingredient(label, 'Process Aids')
   const product = await makeD65Product(ingredient.id, 'Tablet', 'each')
   const supplier = await makeSupplier(`${label} supplier`, null)
   return { ingredient, product, supplier }
@@ -138,7 +138,7 @@ test('gaps 5, 7: Count and Record movement refuse a fractional tablet count the 
 })
 
 test('gap 13: Delete Ingredient is disabled with the reason while it has a product; the API says so (422); one without products deletes', async ({ page }) => {
-  const clarifier = await makeD65Ingredient('Clarifier A', 'Finings')
+  const clarifier = await makeD65Ingredient('Clarifier A', 'Process Aids')
   await makeD65Product(clarifier.id, 'Liquid', 'fl oz')
   await page.goto(`/ingredients/${clarifier.id}`)
   await expect(page.getByTestId('ingredient-delete')).toBeDisabled()
@@ -147,7 +147,7 @@ test('gap 13: Delete Ingredient is disabled with the reason while it has a produ
   expect(res.status()).toBe(422)
   expect((await res.json()).errors.base).toEqual([`${clarifier.name} has products; deactivate them instead`])
 
-  const bare = await makeD65Ingredient('Clarifier B', 'Finings')
+  const bare = await makeD65Ingredient('Clarifier B', 'Process Aids')
   await page.goto(`/ingredients/${bare.id}`)
   await expect(page.getByTestId('ingredient-delete-reason')).toHaveCount(0)
   await page.getByTestId('ingredient-delete').click()

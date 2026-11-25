@@ -28,19 +28,56 @@ test.describe('owner', () => {
   test.use({ storageState: authFile('owner') })
 
   test('the top row: the gear is in the same place on all seven pages, on the page background', async ({ page }) => {
-    const spots: { path: string; x: number; y: number }[] = []
+    const spots: { path: string; x: number; y: number; wraps: boolean }[] = []
     for (const { path, gear } of PAGES) {
       await page.goto(path)
       const g = page.getByTestId(gear)
       await expect(g).toBeVisible({ timeout: 20_000 })
+      // D63: measured once the row has settled. The library's Grains filters and
+      // its packs toggle come with the categories, and wrap the actions to a second row.
+      if (path === '/ingredients') {
+        for (const id of ['grains-maltster', 'grains-on-hand-only', 'quantity-toggle']) await expect(page.getByTestId(id)).toBeVisible({ timeout: 20_000 })
+      }
       // Not inside a white panel (Paper): straight on the page.
       expect(await g.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " MuiPaper-root ")]').count(), path).toBe(0)
       const b = (await g.boundingBox())!
-      spots.push({ path, x: Math.round(b.x), y: Math.round(b.y) })
+      // The actions are on a row of their own: the gear's row starts below the first control.
+      const wraps = await g.evaluate((el) => {
+        const row = el.parentElement!.parentElement!
+        return el.parentElement!.getBoundingClientRect().top >= row.firstElementChild!.getBoundingClientRect().bottom
+      })
+      spots.push({ path, x: Math.round(b.x), y: Math.round(b.y), wraps })
     }
     for (const s of spots) {
       expect(Math.abs(s.x - spots[0].x), s.path).toBeLessThanOrEqual(2)
-      expect(Math.abs(s.y - spots[0].y), s.path).toBeLessThanOrEqual(2)
+      if (!s.wraps) expect(Math.abs(s.y - spots[0].y), s.path).toBeLessThanOrEqual(2)
+    }
+    // Only the library's row may wrap here.
+    expect(spots.filter((s) => s.wraps && s.path !== '/ingredients')).toEqual([])
+  })
+
+  // D63 Stop 2: the wrapped row stays on the right from `sm` up only. At 360 px a
+  // row sits where it does with no margin on its actions, and Brands' are on the left.
+  test('the top row at 360 px: no page moves its actions to the right; Brands starts at the left edge', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 })
+    for (const { path, gear } of PAGES) {
+      await page.goto(path)
+      const g = page.getByTestId(gear)
+      await expect(g).toBeVisible({ timeout: 20_000 })
+      if (path === '/ingredients') {
+        for (const id of ['grains-maltster', 'grains-on-hand-only', 'quantity-toggle']) await expect(page.getByTestId(id)).toBeVisible({ timeout: 20_000 })
+      }
+      const { shown, plain, row } = await g.evaluate((el) => {
+        const end = el.parentElement!
+        const box = () => Math.round(end.getBoundingClientRect().x)
+        const shown = box()
+        end.style.marginLeft = '0'
+        const plain = box()
+        end.style.marginLeft = ''
+        return { shown, plain, row: Math.round(end.parentElement!.getBoundingClientRect().x) }
+      })
+      expect(shown, path).toBe(plain)
+      if (path === '/brands') expect(shown, path).toBe(row)
     }
   })
 
@@ -75,9 +112,12 @@ test.describe('owner', () => {
     await expect(drawer.getByRole('button', { name: 'Production' })).toHaveCount(0)
   })
 
-  test('nav: Brewery has no Settings; old /settings links land on the ingredient categories', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator('.MuiDrawer-paper').first().getByText('Settings', { exact: true })).toHaveCount(0)
+  test("nav: Brewery's Settings is the brewery's (D63); old /settings links land on the ingredient categories", async ({ page }) => {
+    await page.goto('/brewery/production')
+    const settings = page.locator('.MuiDrawer-paper').first().getByText('Settings', { exact: true })
+    await expect(settings).toHaveCount(1)
+    await settings.click()
+    await expect(page).toHaveURL(/\/brewery\/settings$/)
     await page.goto('/settings')
     await expect(page).toHaveURL(/\/ingredients\/categories$/)
     await page.goto('/settings/categories/1')

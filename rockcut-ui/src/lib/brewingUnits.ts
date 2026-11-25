@@ -157,6 +157,9 @@ export function packPlural(name: string | null | undefined): string {
   return `${name}s`
 }
 
+/** A pack size as a label says it: "55", "0.25", "10,000" (D63: a jug of 10,000 mL). */
+export const packSizeNumber = (size: number | string) => Number(size).toLocaleString('en-US', { maximumFractionDigits: LB_DECIMALS })
+
 /**
  * D65 lead decisions 2 (gap 8): a pack and its size in the unit, as a label
  * says it: "55 lb sacks", and a count "tubs of 872 tablets" (never "872 tablets tubs").
@@ -167,7 +170,7 @@ export const packSizeText = (name: string | null | undefined, size: number | str
     ? unit
     : isCountUnit(unit)
       ? `${packPlural(name)} of ${Number(size)} ${unitWord(unit, Number(size))}`
-      : `${Number(size)} ${unit} ${packPlural(name)}`
+      : `${packSizeNumber(size)} ${unit} ${packPlural(name)}`
 
 /** "sack" for 1, else the plural. */
 export const packWord = (name: string | null | undefined, n: number) => (n === 1 ? (name ?? 'pack') : packPlural(name))
@@ -378,13 +381,21 @@ export const INGREDIENTS_BOARD = 'ingredients'
 
 export interface IngredientSettings {
   quantity_display: QuantityDisplay
+  /** D63 §4.4: a hop's use lists leave out the lots with no stock. */
+  hide_used_up_lots: boolean
 }
 
 /** The ingredients settings in `raw` that are valid; anything else is dropped. */
 export function cleanIngredientSettings(raw: unknown): Partial<IngredientSettings> {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  return r.quantity_display === 'packs' || r.quantity_display === 'lb' ? { quantity_display: r.quantity_display } : {}
+  return {
+    ...(r.quantity_display === 'packs' || r.quantity_display === 'lb' ? { quantity_display: r.quantity_display } : {}),
+    ...(typeof r.hide_used_up_lots === 'boolean' ? { hide_used_up_lots: r.hide_used_up_lots } : {}),
+  }
 }
 
 /** The display to use: the stored one, or packs + unit. */
 export const quantityDisplay = (stored: unknown): QuantityDisplay => cleanIngredientSettings(stored).quantity_display ?? 'packs'
+
+/** D63 §4.4: whether the use lists hide used-up lots: the stored choice, or yes. */
+export const hideUsedUpLots = (stored: unknown): boolean => cleanIngredientSettings(stored).hide_used_up_lots ?? true

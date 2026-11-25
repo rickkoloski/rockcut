@@ -13,7 +13,8 @@
 # numbers aren't used. Corrections (Appendix B), made in the rows below:
 # "Dingmans" is Dingemans (maltster and order name); Brown Malt is Crisp,
 # ordered as "Crisp - Brown Malt" (was "Simpsons - Brown Malt"); "RS" is
-# Root Shoot.
+# Root Shoot. D63 §5.3 corrected Root Shoot Pilsner, and gave Acidulated and
+# the flaked oats an extract.
 
 import Ecto.Query, only: [from: 2]
 
@@ -59,7 +60,7 @@ party_ids =
 rows = [
   {"2-Row", "Root Shoot", "Root Shoot", "3.30", "80.30", "11.50", "2.71", "124", nil, "50"},
   {"2-Row", "Rahr", "BSG", "4.70", "81.50", "11.00", "2.00", "154", "Rahr - Standard 2-row (milled)", "55"},
-  {"Acidulated", "Weyermann", "BSG", "5.80", nil, nil, "2.10", "0", "Weyermann - Acidulated Malt", "55"},
+  {"Acidulated", "Weyermann", "BSG", "5.80", "84.90", nil, "2.10", "0", "Weyermann - Acidulated Malt", "55"},
   {"Barley, Roasted", "Simpsons", "BSG", "2.10", "62.00", nil, "552.10", "0", "Simpsons - Roasted Barley", "55"},
   {"Beech Smoked Malt", "Weyermann", "BSG", "4.50", "82.10", "10.40", "2.50", "0", "Weyermann - Rauch Malt", "55"},
   {"Biscuit", "Dingemans", "BSG", "3.54", "77.90", "11.50", "18.17", "0", "Dingemans - Biscuit", "55"},
@@ -85,9 +86,9 @@ rows = [
   {"Munich Barke", "Weyermann", "BSG", "4.00", "78.00", "10.50", "7.80", "70", "Weyermann - Munich Barke (milled)", "55"},
   {"Munich Malt 1", "Weyermann", "BSG", "4.50", "81.70", "10.40", "6.50", "70", "Weyermann - Munich 1 (milled)", "55"},
   {"Munich Malt 2", "Weyermann", "BSG", "3.90", "81.50", "10.60", "8.70", "25", "Weyermann - Munich 2 (milled)", "55"},
-  {"Oats, Flaked", "Grain Millers", "BSG", "8.00", nil, "13.00", "1.50", "0", "Grain Millers - Rolled Oats", "50"},
+  {"Oats, Flaked", "Grain Millers", "BSG", "8.00", "81.50", "13.00", "1.50", "0", "Grain Millers - Rolled Oats", "50"},
   {"Oats, Malted", "Root Shoot", "Root Shoot", "2.20", "62.60", nil, "1.00", nil, nil, "50"},
-  {"Pilsner", "Root Shoot", "Root Shoot", "5.00", "80.80", "10.50", "1.60", "125", nil, "50"},
+  {"Pilsner", "Root Shoot", "Root Shoot", "3.93", "81.50", "11.62", "1.85", "157", nil, "50"},
   {"Pilsner", "Weyermann", "BSG", "3.90", "80.50", "10.75", "1.75", "110", "Weyermann - Pilsner (milled)", "55"},
   {"Pilsner", "Rahr", "BSG", "4.70", "81.50", "11.00", "2.00", "154", "Rahr to Thee - Pilsner (milled)", "55"},
   {"Pilsner-Barke", "Weyermann", "BSG", "3.90", "80.50", "10.75", "1.75", "110", "Weyermann - Pilsner Barke (milled)", "55"},

@@ -19,7 +19,7 @@ import {
 
 // D65 Stop 1 (spec §4.1–§4.3, §5 items 1–3, decision 8, A9): products in
 // Fruits, Spices & Flavorings, Sugars and Extracts and Other Consumables
-// (Water Salts, Finings), the None manufacturer, the tablets unit and the
+// (Water Salts, Process Aids), the None manufacturer, the tablets unit and the
 // categories. As brewer1 (brewer2 for a salt). Every row a test makes is
 // `[TEST-TEMP]`: its own ingredients and companies, never the seeded
 // Whirlfloc or Dextrose; subcategories are deleted by id.
@@ -165,15 +165,15 @@ test.describe('products', () => {
   })
 
   test('Whirlfloc T reads "tablets"; 2.5 tablets is refused in the dialog and by the API', async ({ page }) => {
-    const whirlfloc = await makeD65Ingredient('Whirlfloc', 'Finings')
-    const d = await addProduct(page, 'Finings')
+    const whirlfloc = await makeD65Ingredient('Whirlfloc', 'Process Aids')
+    const d = await addProduct(page, 'Process Aids')
     await pick(page, d, 'Ingredient', re(whirlfloc.name))
     await pick(page, d, 'Form', 'Tablet')
     await pick(page, d, 'Unit', 'tablets')
     await d.getByTestId('product-name').fill('T')
     const saved = await save(page, d)
     expect(saved.status).toBe(201)
-    await expect(page.getByTestId('product-item')).toContainText('Tablet · tablets · Finings')
+    await expect(page.getByTestId('product-item')).toContainText('Tablet · tablets · Process Aids')
     await expect(page.getByRole('heading', { name: `${whirlfloc.name} T · None` })).toBeVisible()
 
     const lot = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
@@ -244,10 +244,10 @@ test('Stop 2 item 0: a Fruits category page never shows Add field, even while th
 })
 
 test.describe('categories', () => {
-  test('Water Salts and Finings under Other Consumables; no Future Ingredients or Irish Moss; no Add field or subcategory on the three', async ({ page }) => {
+  test('Water Salts and Process Aids under Other Consumables; no Future Ingredients or Irish Moss; no Add field or subcategory on the three', async ({ page }) => {
     const all = await categoriesList()
     const consumables = all.find((c) => c.key === 'consumables')!
-    expect(all.filter((c) => c.parent_id === consumables.id).map((c) => c.name)).toEqual(expect.arrayContaining(['Water Salts', 'Finings']))
+    expect(all.filter((c) => c.parent_id === consumables.id).map((c) => c.name)).toEqual(expect.arrayContaining(['Water Salts', 'Process Aids']))
     expect(all.some((c) => c.name === 'Future Ingredients' || c.key === 'future')).toBe(false)
     expect(all.some((c) => c.name === 'Acids')).toBe(false)
     const ingredients = (await (await (await apiAs('brewer1')).get('/api/ingredients')).json()).data as { name: string }[]
@@ -265,7 +265,7 @@ test.describe('categories', () => {
 
     await page.goto(`/ingredients/categories/${consumables.id}`)
     await expect(page.getByTestId('category-children')).toContainText('Water Salts')
-    await expect(page.getByTestId('category-children')).toContainText('Finings')
+    await expect(page.getByTestId('category-children')).toContainText('Process Aids')
     const d = await openDialog(page, page.getByTestId('category-add-child'), 'category-dialog')
     const name = tempTag('Cleaning')
     await d.getByTestId('category-name').fill(name)
@@ -290,7 +290,7 @@ test.describe('at 360 px', () => {
     const plum = await makeD65Ingredient('Plum', 'fruits')
     const purée = await makeD65Product(plum.id, 'Purée', 'lb')
     await makeD65Lot(purée, '44')
-    const whirlfloc = await makeD65Ingredient('Whirlfloc', 'Finings')
+    const whirlfloc = await makeD65Ingredient('Whirlfloc', 'Process Aids')
     const tabs = await makeD65Product(whirlfloc.id, 'Tablet', 'each', { name: 'T' })
     await makeD65Lot(tabs, '872')
 

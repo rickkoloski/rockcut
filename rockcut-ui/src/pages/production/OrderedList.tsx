@@ -13,11 +13,13 @@ interface Props<T extends { id: number }> {
   /** Saves the new order (all the ids); rejects to put the rows back. */
   onReorder: (ids: number[]) => Promise<unknown>
   label: (item: T) => string
-  /** The row's content after the drag handle (name, details, actions). */
-  render: (item: T) => ReactNode
+  /** The row's content after the drag handle (name, details, actions); `ids` is the order shown (D63). */
+  render: (item: T, ids: number[]) => ReactNode
   testId: string
   /** D50: the brewhouse device's view: rows in order, no handle or arrows. */
   readOnly?: boolean
+  /** D63: what a refused save says (default: `prodError`). */
+  errorText?: (err: unknown) => string
 }
 
 /**
@@ -27,7 +29,7 @@ interface Props<T extends { id: number }> {
  * it back. Only the handle is the drag button, so the row's own buttons
  * aren't nested inside one (D47 task 0, item 10).
  */
-export default function OrderedList<T extends { id: number }>({ items, onReorder, label, render, testId, readOnly }: Props<T>) {
+export default function OrderedList<T extends { id: number }>({ items, onReorder, label, render, testId, readOnly, errorText = prodError }: Props<T>) {
   const byKey = useMemo(() => new Map(items.map((i) => [String(i.id), i])), [items])
   const source = useMemo<ListContainer[]>(() => [{ id: LIST, itemIds: items.map((i) => String(i.id)) }], [items])
   const { containers, move } = useOptimisticLists(source)
@@ -38,7 +40,7 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
     const next = applyMove(containers, m)
     if (next === containers) return
     setError(null)
-    move(m, () => onReorder(next[0].itemIds.map(Number))).catch((err) => setError(prodError(err)))
+    move(m, () => onReorder(next[0].itemIds.map(Number))).catch((err) => setError(errorText(err)))
   }
 
   const step = (key: string, direction: -1 | 1) => {
@@ -78,7 +80,7 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
         >
           <DragIndicator fontSize="small" color="action" />
         </Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>{render(item)}</Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>{render(item, ids.map(Number))}</Box>
         {!overlay && (
           <Box sx={{ display: 'flex' }}>
             <Tooltip title="Move up">
@@ -112,7 +114,7 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
       <Box data-testid={testId}>
         {items.map((item) => (
           <Paper key={item.id} variant="outlined" data-testid={`${testId}-row-${item.id}`} sx={{ px: 2, py: 0.75, mb: 0.75 }}>
-            {render(item)}
+            {render(item, items.map((i) => i.id))}
           </Paper>
         ))}
       </Box>

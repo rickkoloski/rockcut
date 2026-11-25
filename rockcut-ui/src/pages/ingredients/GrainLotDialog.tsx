@@ -7,6 +7,7 @@ import FeatureFields from './FeatureFields'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
+import { saveRefused } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, formatQuantity, packSizeLabel, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotFeatureBasis, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
@@ -89,7 +90,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       })
       onClose()
     } catch (err) {
-      setError(parseApiError(err))
+      setError(saveRefused(err, 'lot'))
     }
   }
 
@@ -170,7 +171,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       )}
       <FormControlLabel
         control={<Switch checked={expired} onChange={(e) => setExpired(e.target.checked)} data-testid="lot-expired" />}
-        label="Expired (stale or damaged: oldest first skips it)"
+        label={`Expired (stale or damaged: ${hops ? 'the use order' : 'oldest first'} skips it)`}
       />
       {hops ? (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={loading} />

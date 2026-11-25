@@ -39,7 +39,7 @@ async function offer(productId: number, supplierId: number, pack: string, size: 
 }
 
 async function tabletProduct(label: string) {
-  const ingredient = await makeD65Ingredient(label, 'Finings')
+  const ingredient = await makeD65Ingredient(label, 'Process Aids')
   const product = await makeD65Product(ingredient.id, 'Tablet', 'each')
   const supplier = await makeSupplier(`${label} supplier`, null)
   return { ingredient, product, supplier }
@@ -75,8 +75,8 @@ test('gap 14: a disabled Delete keeps its name and is described by its reason, o
   await page.getByTestId('ingredient-delete').locator('..').hover()
   await expect(page.getByRole('tooltip')).toHaveText(`${ingredient.name} has products; deactivate them instead`)
 
-  // The seeded Finings category has ingredients, so its Delete is disabled the same way (read only).
-  await page.goto(`/ingredients/categories/${await categoryId('Finings')}`)
+  // The seeded Process Aids category has ingredients, so its Delete is disabled the same way (read only).
+  await page.goto(`/ingredients/categories/${await categoryId('Process Aids')}`)
   const delCategory = page.getByRole('button', { name: 'Delete Category' })
   await expect(delCategory).toBeDisabled()
   const reason = await page.getByTestId('category-delete-reason').textContent()

@@ -1,6 +1,6 @@
 defmodule RockcutApi.TaskBoardTest do
   @moduledoc "D38: the board read model (`Tasks.board/3`) and its day header (§3.2)."
-  use RockcutApi.DataCase, async: true
+  use RockcutApi.DataCase, async: false
 
   import RockcutApi.TaskFixtures
 

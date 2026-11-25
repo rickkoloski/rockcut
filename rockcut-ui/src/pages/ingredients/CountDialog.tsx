@@ -6,7 +6,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, productPack, productShortName } from '../../lib/brewingUnits'
-import { FUTURE_DATE, GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
+import { FUTURE_DATE, GRAIN_KEYS, lotChoice } from '../../lib/inventory'
 import { onHandText, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement } from '../../lib/types'
@@ -20,7 +20,7 @@ interface CountDialogProps {
 
 /**
  * D60 §3.8: a count. One total by default: a shortfall comes off the oldest
- * lots that aren't expired, an overage goes onto the newest lot. **Count by
+ * lots that aren't expired, an overage goes onto the newest that isn't. **Count by
  * lot**: one box per lot with stock (expired lots included); a box left empty
  * isn't changed. A count that matches on-hand is still saved: the history
  * shows "Counted, no change" (gap 11).
@@ -38,7 +38,9 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
   const [error, setError] = useState<string | null>(null)
 
   const pack = productPack(product.offers, lots)
-  const counted = [...lots].filter((l) => Number(l.on_hand ?? 0) > 0 || l.status === 'expired').sort(oldestFirst)
+  // D63 §4.4: a hop's shortfall comes off in use order.
+  const auto = lotChoice(product.category_key)
+  const counted = [...lots].filter((l) => Number(l.on_hand ?? 0) > 0 || l.status === 'expired').sort(auto.sort)
   const create = useApiCreate<InventoryMovement[]>(`/api/ingredient_products/${product.id}/count`, { invalidateKeys: GRAIN_KEYS })
   const valid = byLot ? Object.values(perLot).every((v) => v.valid) : total.valid
 
@@ -101,7 +103,7 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
           label="Counted"
           onChange={setTotal}
           testId="count-total"
-          helperText="Short: off the oldest lots that aren't expired. Over: onto the newest lot."
+          helperText={auto.short}
         />
       )}
       {byLot &&

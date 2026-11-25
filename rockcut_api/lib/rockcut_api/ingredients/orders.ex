@@ -38,6 +38,7 @@ defmodule RockcutApi.Ingredients.Orders do
     PurchaseOrderLine,
     SupplierOffer,
     Units,
+    UseOrder,
     Versions
   }
 
@@ -770,7 +771,12 @@ defmodule RockcutApi.Ingredients.Orders do
       nil -> :ok
     end
 
-    lot = save!(changeset)
+    # D63 §4.1: a hop lot at the end of its use list.
+    lot =
+      case UseOrder.insert_lot(changeset) do
+        {:ok, lot} -> lot
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
 
     Features.copy_standard!(product.id, lot.id, Enum.map(features, fn {t, _} -> t.id end))
     Features.write!({:lot, lot.id}, features)

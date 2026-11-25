@@ -11,7 +11,7 @@ defmodule RockcutApi.Ingredients.Ions do
 
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.{Ingredient, IngredientCategory}
-  alias RockcutApi.Ingredients.{Catalog, FeatureType, Features, IngredientFeatureValue}
+  alias RockcutApi.Ingredients.{Catalog, FeatureType, Features, IngredientFeatureValue, UseOrder}
 
   @keys ~w(ca mg co3 hco3 so4 na cl) |> Enum.map(&"#{&1}_ppm_per_g_gal")
 
@@ -88,29 +88,35 @@ defmodule RockcutApi.Ingredients.Ions do
   the plain ingredient save. `{:ok, ingredient}` with `ions` filled.
   """
   def save_ingredient(ingredient, attrs) do
-    Repo.transaction(fn ->
-      saved =
-        (ingredient || %Ingredient{})
-        |> Ingredient.changeset(attrs)
-        |> Repo.insert_or_update()
-        |> case do
-          {:ok, saved} -> saved
-          {:error, changeset} -> Repo.rollback(changeset)
+    Repo.transaction(
+      fn ->
+        # D63 §4.1: moved into or out of Hops, its lots join or leave a use list.
+        saved =
+          UseOrder.keep(if(ingredient, do: UseOrder.lot_ids(ingredient), else: []), fn ->
+            (ingredient || %Ingredient{})
+            |> Ingredient.changeset(attrs)
+            |> Repo.insert_or_update()
+            |> case do
+              {:ok, saved} -> saved
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+          end)
+
+        case Map.fetch(attrs, "ions") do
+          {:ok, ions} ->
+            case put(saved, ions) do
+              {:ok, _} -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+
+          :error ->
+            :ok
         end
 
-      case Map.fetch(attrs, "ions") do
-        {:ok, ions} ->
-          case put(saved, ions) do
-            {:ok, _} -> :ok
-            {:error, reason} -> Repo.rollback(reason)
-          end
-
-        :error ->
-          :ok
-      end
-
-      saved |> Repo.preload(:category, force: true) |> Map.put(:ions, get(saved.id))
-    end)
+        saved |> Repo.preload(:category, force: true) |> Map.put(:ions, get(saved.id))
+      end,
+      mode: :immediate
+    )
   end
 
   defp write!(ingredient_id, type, nil) do

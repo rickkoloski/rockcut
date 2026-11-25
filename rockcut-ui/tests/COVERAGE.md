@@ -1549,3 +1549,122 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 16 (decisions 8) the closing adjustment isn't before the old record's latest count | LQA "gap 16: … dates past a count" |
 | 25 (decisions 9) Edit, Delete or Remove of a count, entry, lot pitch, brink or strain type that's gone says so in a sentence instead of "Not found", and the screen behind refreshes; a harvest into a deleted brink | LQ "gap 25" (3); LQA "gap 25" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |
+
+## D63: Foundations for recipes
+
+Spec `docs/current_work/specs/d63_foundations_spec.md`. Playwright `regression/ingredients/d63-stop-0.spec.ts` ("S0") unless named; rows marked **(revert)** were run with the fix reverted and failed.
+
+**Stop 0 (carry-ins, §3)**
+
+| Item | Coverage |
+|---|---|
+| 6260 Back at 360 px closes Dump brink and Mark clean; the next Back leaves the page | S0 "Dump brink and Mark clean…" **(revert)** |
+| 6260 from Brink History, Back closes only Remove / Delete count, then History | S0 "from Brink History…" **(revert)** |
+| 6260 Back does nothing while the confirm is in flight (twice), and nothing is left behind | S0 "while Remove is in flight…" **(revert** of the guard alone**)** |
+| 6260 Remove pitch on the batch page | S0 "Remove pitch on the batch page…" **(revert)** |
+| 6260 Back never runs a second answer (`onCancel`) | S0 "the second answer…" **(revert**; and with Back wired to the answer**)** |
+| 6260 a confirm that deletes and navigates lands there: batch, brand, recipe, ingredient, product, category | S0 "as breweryMgr: deleting (…)" (6) **(revert** fails at the Back step before the landing check**)** |
+| 6260 the Idea card's Discard and Delete for good close the card, which navigates (from the board: `navigate(-1)`; from a link: replace) | `ideas/boards-scenarios` "D63 at 360 px…" (2) **(revert** of `afterBackCloses` alone, and of 6260**)** |
+| 6260 the board's, Daily items' and out-of-service confirms keep one Back entry (their own hooks removed) | S76 tests in `task-board-phone`, `task-board-daily-items`, `production/out-of-service` |
+| 6260 a real phone's Back gesture | **manual-only** (Playwright's `goBack()` is a history back) |
+| 6261 a voided record with no entries isn't listed; one with entries is | ExUnit `d64_local_qa_test` "D63 (6261)" (2; the first **(revert)**); S0 "6261…" **(revert)** |
+| 6262 one helper (`sumByUnit`) for New order and the order page; tablets too | Vitest `d63Stop0.test.ts` **(revert** to one `each` sum**)**; S0 "6262…" **(revert)** |
+| 5911 S16 steps a week at a time, each week loaded (`openScheduler`) | `d58/sweep` S16 (not provable by revert: the old steps pass locally too) |
+
+**Stop 1 (catalog, §5)**: ExUnit `rockcut_api/migrations/d63_catalog_test` ("MIG": D64's released seeds on a database of its own, the four migrations run for real, then the seeds), `rockcut_api_web/controllers/d63_units_test` ("UNITS"); Vitest `d63Stop1.test.ts` ("V1"); Playwright `regression/ingredients/d63-stop-1.spec.ts` ("S1"; the seeded rows read only).
+
+| Item | Coverage |
+|---|---|
+| §5.1 Finings renamed in any case, by the parent's key; a Process Aids already there stops it; a Finings elsewhere isn't touched; the seeds don't double a lower-case one | MIG "Process Aids" (4) **(revert**: duplicate stop, case, parent key; Finings back in `seeds.exs`; not the lower-case guard**)**; S1 "lists Whirlfloc T…" |
+| §5.1 `Catalog` knows Process Aids and Finings; g and mL only there (refused on salts, spices, fruit, sugar; kg and ml refused) | UNITS "where g and mL are" **(revert)**; `d65_stop1_test` |
+| §5.1 pack sizes 250 g, 1,000 g, 1,000 mL, 10,000 mL; 10,000.01 refused on offers and lots; usual packs (g bag, mL bottle) | UNITS "pack sizes" **(revert** of each limit and the packs**)**; S1 "a g product…" |
+| §5.1 quantities to 0.01, refusals and counts in g / mL, packs + unit | UNITS "quantities"; V1 |
+| §5.1 order, receive ("2 bags", 500 g), cost per unit, To order, Totals with g and mL subtotals | UNITS "ordered, received…" **(revert)**; V1; S1 "2 bags of zinc…" |
+| §5.1, §5.2 the new rows; an existing row, and EKG with any lot, left alone | MIG "the new rows", "a row already there…" **(revert** of the lot rule**)**; `hop_seeds_test`, `d65_seeds_test`, `grain_seeds_test`; S1 "seeded rows" |
+| §5.3 each value corrected; each changed by hand left and logged; one removed not put back; lots and other makers' products untouched | MIG "values" (5) **(revert**: old-value, none and maker guards**)** |
+| §5.4 the product moves with offer and price; left with a lot, when Anhydrous has one, or when it isn't the seeded one; no second product from the seeds | MIG "calcium chloride" (4) **(revert**: the lot and Anhydrous guards, and the seed; not the "isn't the seeded one" guard**)**; S1 |
+| §5.5 split with movements, alpha, cost and prices; six ways of not being as seeded; renamed by hand; an order or contract line (rename only); the seeds never add a second lot | MIG "Pink Boots" (10) **(revert**: the lots, offers and lines guards, the price copy, `ingredient_id`, the seed's two; not the second-product or '24-there guards**)**; S1 |
+| §5.6 from D64, the seeds twice: the second adds 0, nothing comes back or doubles; an empty database: the migrations do nothing, and its catalog ends the same | MIG "from D64's data" (5) and its `setup` **(revert**: Finings, Hydrous's product, DME, Pilsner moisture put back**)** |
+| A top row's actions stay on the right when they wrap | `ui/d52` "the top row" **(revert)** |
+| TaskBoardTest not async ("Database busy") | seed 537802: 9 failed before, 0 after |
+| Stop 2 item 0a: at 360 px the top row's actions are where they were before 17c166a on all seven pages; at 1440 px as Stop 1 left them | `ui/d52` "the top row at 360 px…" **(revert** to `ml: 'auto'` at every width**)**, "the top row…" **(revert** of the margin**)** |
+
+**Stop 2 (hop use lists, §4)**: ExUnit `rockcut_api_web/controllers/d63_use_order_test` ("USE"), `rockcut_api/migrations/d63_catalog_test` "the use order's backfill" ("BACK"; D64's fixtures), `device_route_matrix_test`, `authz_parity/brewing_test`; Vitest `d63Stop2.test.ts` ("V2"), `saveQueue.test.ts` ("Q"); Playwright `regression/ingredients/d63-stop-2.spec.ts` ("S2", its own `[TEST-TEMP]` hops).
+
+| Item | Coverage |
+|---|---|
+| §4.1 backfill: received date, crop year, id; per variety and form, across makers; by key, children too; a placed lot kept, a rerun adds at the end; an empty database | BACK (3) **(revert** of each**)** |
+| §4.1 a new lot is max + 1 in its own write: Add lot, receiving, `Brewing.create_ingredient_lot`, the hop and D63 seeds; four at once; none outside Hops; not settable | USE "a lot's place"; BACK; S2 "a lot added…" **(revert** of each path but the synthetic seed, whose lots aren't hops**)** |
+| §4.1 changes of list: a lot's product, a product's ingredient, an ingredient's category; a product's form stays fixed; another maker's same form doesn't move | USE "a lot's place" **(revert** of each**)**; S2 "a product moved to another hop…" |
+| §4.1 receiving into, counting, using and expiring move nothing; a lot at 0 keeps its place | USE **(revert** of the place kept at 0; the rest has no code to revert**)**; S2 "a lot added…", "hidden by default…" |
+| §4.2 GET; a null position crashes nothing; `Inventory.use_order` | USE "reading" **(revert)** |
+| §4.2 PUT: 422 for a foreign, repeated, missing, unknown or used-up lot and bad params; gaps kept, shared or null places numbered | USE "reordering" **(revert)** |
+| §4.2 `version`: 409 when a lot was reordered, added, used up, back or deleted; two at once; not for an edit or a partial use | USE **(revert** of the check and of the stock part; the positions in the hash are not provable alone, the order is in it too**)**; S2 "brewer2 moves from a stale list", "a lot added / used up meanwhile" **(revert** of the refetch**)** |
+| §4.3 outgoing kinds and count shortfalls in use order, that maker's lots only, Expired skipped; overages and "no change" on the newest by date then id; grain and yeast unchanged | USE "allocation" **(revert** of each: use order, every category, last of the list, id only, the tie, all expired**)**; S2 "using and counting" |
+| §4.4 drag, arrows, keyboard; In use; T90 and Cryo apart; same for brewer2 | S2 "the list"; V2 **(revert**: In use and Expired**)** |
+| §4.4 Record movement and Count wording, hops only (the lot dialog's Expired too) | S2, V2 **(revert** both ways**)** |
+| §4.4 Hide used-up lots: per account, default on, Hops list and hop page; a failed save says so | USE, V2, S2 "Hide used-up lots" **(revert)** |
+| A second move before the first save answers; a failed save puts the old order back | Q, S2 "two brewers, and a slow or broken network" **(revert**: the queue, the hold, the reset, the version carried, the waiting save**)** |
+| §7 Brewery members, managers, owners; office1, bartenders, every device 403 | USE "who", the matrix and parity suites, S2 "office1…" (the controller's own `Authz` check is behind the `:brewery` scope: not provable by revert) |
+| 360 px: full-width rows, arrows on screen, long-press drag, no sideways scroll | S2 "at 360 px" |
+| a real phone's long-press | **manual-only** |
+| PurchasingSchemasTest not async | item 0b, test code only |
+
+**Stop 3 (brewery settings, the `[SEED]` hop; §6, §9)**: ExUnit `rockcut_api_web/controllers/d63_brewery_settings_test` ("SET"), `rockcut_api/migrations/d63_brewery_settings_test` ("SETMIG": a database of its own, real connections), `seeds/hop_seeds_test` ("HOPS"), `device_route_matrix_test`; Vitest `d63Stop3.test.ts` ("V3"); Playwright `regression/ingredients/d63-stop-3.spec.ts` ("S3"; the one settings row is put back through the API after each test).
+
+| Item | Coverage |
+|---|---|
+| §6.1 the starting values, on the migration's row and on one made by the first read or write; the database takes one row | SET "the row", SETMIG **(revert**: the recreate, a starting value, the check**)** |
+| §6.1 first reads at once make one row | SETMIG **(revert** of `on_conflict`**)** |
+| §6.1 every limit, inclusive, both ends of each; empty, text, comma, exponent; decimals refused, not rounded; the three equations | SET "limits" **(revert** of each**)**; V3; S3 "250, text…" **(revert)** |
+| §6.1 zinc stored per bbl, shown, typed and refused per 8 bbl; zinc and Clarity Ferm kept when not changed | SET "a save"; V3; S3 "equations, and zinc…", "opening and saving…" **(revert** of the scale and of sending every box**)** |
+| §6.2 a stale `lock_version` is 409 with a sentence and the current values; missing refused; checked in `BEGIN IMMEDIATE` | SET "the version", SETMIG "saves at once…" **(revert** of each**)** |
+| §6.2 `updated_by` from the session; nothing different isn't a change | SET "a save" **(revert)** |
+| §6.2, §7 each column: members read, managers and owners edit, others neither; the brewhouse device reads with no code and its PUT is 403 with a manager's; other devices neither | SET "who", the route matrix **(revert** of each `Authz` rule, the PUT's scope and the PUT's check; the GET's own check is behind the `:brewery` scope: not provable alone**)**; S3 |
+| §6.2 the page: groups, both lines, nav, device's nav, no Edit for viewers; everyone else Home; old `/settings` redirects kept | S3, `ui/d52` "nav: …" **(revert)** |
+| §6.2 "Last changed by … on …"; none before anyone has | SET; V3; S3 **(revert)** |
+| §6.2 two editors: the sentence, the current values, the typing kept, Save and Edit still usable | V3; S3 "two editors…" (2) **(revert)** |
+| a double-click on Save writes once (slow network) | S3 (the gate is `FormDialog`'s, not reverted here) |
+| 360 px: no sideways scroll; Back closes Edit and stays on the page | S3 "360 px…" **(revert** of `phone`**)** |
+| §4.4 A9: the switch and the packs / total toggle don't touch each other, kept after a reload | SET "the account's ingredient settings" **(revert)**; S3 "the switch and…" |
+| §9 the `[SEED]` hop: one form, three lots, two makers, one used up, one expired; a second setup is the same; never from the seeds in prod | HOPS **(revert** of each lot's part and the tag**)**; S3 "the [SEED] hop" (read only) |
+| counts that gained the `[SEED]` hop | `grain_seeds_test`, `d65_seeds_test`, `hop_seeds_test`, `d63_catalog_test` |
+
+**§12 → tests** (Stops 0–3)
+
+| Scenario | Test |
+|---|---|
+| Stop 0: Back on Dump brink, Mark clean, Remove pitch; from History → Remove; a confirm that navigates | S0; a real phone's Back gesture: **manual** (Playwright's `goBack()` is a history back) |
+| Stop 0: a voided empty record; 20 bricks and 12 pitchables | S0 "6261…", "6262…" |
+| Use order: received-date order, drag to the top, kept, "In use", same for brewer2 | S2 "the list" |
+| Use order: arrows at 360 px, keyboard | S2 "at 360 px", "the list"; a long-press on a real phone: **manual** (touch is simulated) |
+| Use order: add a lot (end), receive into one (stays) | S2 "a lot added…" |
+| Use order: Record movement "In use order", spill, a lot by hand; Count short and over | S2 "using and counting"; USE "allocation" |
+| Use order: expired skipped; used up hidden, shown per account, back in place | S2 "Hide used-up lots"; S3 "the [SEED] hop" |
+| Use order: two brewers | S2 "two brewers…" |
+| Use order: grain as before; office1 and the device 403; T90 and Cryo apart | USE; S2 |
+| Catalog: Process Aids, zinc ordered, received, counted, subtotals | S1; UNITS |
+| Catalog: EKG, calcium chloride, Pink Boots | S1 (read only); MIG |
+| Catalog: seeds twice; a value edited first is left | MIG |
+| Settings: brewer1 sees, no Edit; breweryMgr 1.5 and "Last changed by"; owner edits | S3 |
+| Settings: two editors | S3 "two editors…" |
+| Settings: 250, text, a comma decimal | S3 "250, text…" |
+| Settings: the brewhouse device; bartender1, office1, a Taproom device | S3; SET "who" |
+| Release: Matt's prod checks (§9) | **manual** (prod) |
+
+**Fix cycle 1 (local QA)**: Vitest `d63Fix1.test.ts` ("VF1"), `d63Stop2.test.ts` ("V2"); Playwright `regression/ingredients/d63-fix-1.spec.ts` ("F1", 1366 and 360 px).
+
+| Item | Coverage |
+|---|---|
+| Gap 1: Count says the extra goes onto the newest lot that isn't expired (hops, and the rest) | V2 "only a hop reads…" **(revert** of each**)**; S2 "Count…", "a grain still says…" |
+| Gap 3: Back after deleting a product, ingredient, batch, brand, recipe or category says not found (an order can't be deleted) | F1 "Back after deleting (…)" (12) **(revert)** |
+| Gap 3: the page isn't read again, and doesn't say not found, on its way out | F1 the same **(revert** of the skipped refetch on product; of the wait on brand**)**; VF1 "waits until…", "stops watching…" **(revert)** |
+| Gap 3: a row someone else deletes keeps the open form, though its read answers 404 | F1 "a product someone else deletes…" (2) **(revert)** |
+| Gap 4: the pack note's example: tablets and other counts, and a brick; none on weights, volumes, pitchables or cases of them | VF1 "the pack note hint" **(revert)** |
+
+**Fix cycle 2 (local QA recheck 1)**: Playwright `regression/ingredients/d63-fix-2.spec.ts` ("F2").
+
+| Item | Coverage |
+|---|---|
+| Saving a product (1366 and 360 px), ingredient, offer or lot (both lot dialogs) someone else deleted says "This … was deleted, so it can't be saved."; the dialog and the typing stay | F2 (6) **(revert)** |
+| A missing supplier, maker, ingredient, category, strain type or product named in those saves is a 422, so it never reads as the row being deleted | F2 "a missing supplier…" (the API's own answers; nothing to revert) |
