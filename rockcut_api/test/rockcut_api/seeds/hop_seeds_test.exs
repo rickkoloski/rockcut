@@ -15,16 +15,28 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
   import ExUnit.CaptureIO
 
   alias RockcutApi.Brewing.{Ingredient, IngredientLot}
-  alias RockcutApi.Ingredients.{Catalog, Movement, Product, ProductFeatureValue, SupplierOffer}
+
+  alias RockcutApi.Ingredients.{
+    Catalog,
+    Movement,
+    Party,
+    Product,
+    ProductFeatureValue,
+    SupplierOffer,
+    UseOrder
+  }
+
+  alias RockcutApi.Seeds.Synthetic
 
   @moduletag :capture_log
 
   defp seed!, do: capture_io(fn -> Code.eval_file("priv/repo/seeds.exs") end)
 
+  # The reference products (the synthetic setup's [SEED] hop is below).
   defp hop_products do
     from p in Product,
       join: i in assoc(p, :ingredient),
-      where: i.category_id in ^Catalog.category_ids(["hops"])
+      where: i.category_id in ^Catalog.category_ids(["hops"]) and not like(i.name, "[SEED]%")
   end
 
   # The seeded lots: hop lots not made by the synthetic setup or a test.
@@ -47,7 +59,10 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
       lb: total_lb(),
       hops:
         Repo.aggregate(
-          from(i in Ingredient, where: i.category_id in ^Catalog.category_ids(["hops"])),
+          from(i in Ingredient,
+            where:
+              i.category_id in ^Catalog.category_ids(["hops"]) and not like(i.name, "[SEED]%")
+          ),
           :count
         )
     }
@@ -197,5 +212,65 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
     assert hop_counts().lots == 28 + 1
     assert Decimal.equal?(total_lb(), "410.6")
     assert Repo.reload!(galaxy.product).origin == "Australia (Tasmania)"
+  end
+
+  describe "the synthetic setup's [SEED] hop (D63 §9)" do
+    defp seed_hop_lists do
+      case Repo.get_by(Ingredient, name: "[SEED] Summit Cone") do
+        nil -> nil
+        hop -> UseOrder.list(hop.id)
+      end
+    end
+
+    defp seed_hop do
+      for %{form: form, lots: lots} <- seed_hop_lists() do
+        {form,
+         Enum.map(lots, fn l ->
+           {l.lot_number, l.product.manufacturer.name, l.status, Decimal.to_integer(l.on_hand),
+            l.use_position, l.crop_year == l.received_date.year}
+         end)}
+      end
+    end
+
+    @expected [
+      {"T90 Pellet",
+       [
+         {"[SEED] Summit Cone A", "Yakima Chief Hops", "depleted", 0, 1, true},
+         {"[SEED] Summit Cone B", "BSG", "expired", 22, 2, true},
+         {"[SEED] Summit Cone C", "Yakima Chief Hops", "available", 33, 3, true}
+       ]}
+    ]
+
+    test "three lots from two makers in one form: used up, expired, in stock; twice is the same" do
+      seed!()
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop() == @expected
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop() == @expected
+
+      assert Repo.aggregate(from(i in Ingredient, where: like(i.name, "[SEED] Summit%")), :count) ==
+               1
+    end
+
+    test "without the hop companies: no hop, no error" do
+      seed!()
+
+      Repo.update_all(from(p in Party, where: p.name == "Yakima Chief Hops"),
+        set: [name: "Other"]
+      )
+
+      {:ok, _} = Synthetic.setup()
+      assert seed_hop_lists() == nil
+    end
+
+    test "Release.seed's seeds never make it where the synthetic setup may not run" do
+      env = Application.get_env(:rockcut_api, :deploy_env)
+      Application.put_env(:rockcut_api, :deploy_env, "prod")
+      on_exit(fn -> Application.put_env(:rockcut_api, :deploy_env, env) end)
+      seed!()
+      assert Repo.get_by(Ingredient, name: "EKG")
+      assert seed_hop_lists() == nil
+      refute Repo.exists?(from i in Ingredient, where: like(i.name, "[SEED]%"))
+    end
   end
 end

@@ -133,8 +133,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     # D64 Stop 4: and the synthetic setup's two [SEED] yeast products, one
     # offer each, the Liquid one with its 7 bbl pitch size.
     # D63 §5: plus Pink Boots '24 (a hop), EKG, four process aids and seven
-    # spices (no offers).
-    assert first[Product] == 44 + 27 + 29 + 3 + 11 + 2 + 1 + 1 + 4 + 7
+    # spices (no offers), and the synthetic setup's [SEED] hop's two (none).
+    assert first[Product] == 44 + 27 + 29 + 3 + 11 + 2 + 1 + 1 + 4 + 7 + 2
     assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11 + 2 + 1 + 1 + 4
     # Blanks stay blank (21 of them, mostly protein; D63 gave Acidulated and
     # the flaked oats an extract, and SoNature's lime a Brix), so fewer than 44 × 5.

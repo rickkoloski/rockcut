@@ -855,6 +855,7 @@ defmodule RockcutApi.Migrations.D63CatalogTest do
   end
 
   # {hop, form, lot number, crop year, received, position}, in each list's order.
+  # The reference hops' (the synthetic setup's hop: `HopSeedsTest`).
   defp use_lists do
     rows("""
     SELECT i.name, p.form, l.lot_number, l.crop_year, l.received_date, l.use_position
@@ -862,7 +863,7 @@ defmodule RockcutApi.Migrations.D63CatalogTest do
     JOIN ingredients i ON i.id = l.ingredient_id
     JOIN ingredient_categories c ON c.id = i.category_id
     JOIN ingredient_products p ON p.id = l.product_id
-    WHERE c.key = 'hops' ORDER BY i.name, p.form, l.use_position
+    WHERE c.key = 'hops' AND i.name NOT LIKE '[SEED]%' ORDER BY i.name, p.form, l.use_position
     """)
   end
 

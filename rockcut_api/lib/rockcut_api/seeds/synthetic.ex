@@ -59,6 +59,11 @@ defmodule RockcutApi.Seeds.Synthetic do
   and go first on the next setup; yeast rows of anything else that point at
   a `[SEED]` batch lose the link before the batch is rebuilt. Needs the D64
   reference data (Fermentis, White Labs, BSG) and YB2/YB3; skipped without.
+  D63: `[SEED] Summit Cone` (a hop, T90 Pellet) from Yakima Chief Hops and
+  BSG, three lots in use order: one used up, one Expired with stock and one
+  with stock ("In use"), for the read-only use order spec. Expired is a status
+  set by hand, not a date, so the dates don't change it. Needs the hop
+  reference data; skipped without it.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -886,6 +891,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     seed_inventory(u, today)
     seed_d65_inventory(u, today)
     seed_d64_yeast(u, today)
+    seed_d63_hop(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -1353,6 +1359,86 @@ defmodule RockcutApi.Seeds.Synthetic do
     else
       Logger.info("Synthetic setup: no BSG or Other Consumables; no D65 [SEED] products.")
     end
+  end
+
+  # D63 §9: {maker, lot number, received (days ago), alpha, opening lb,
+  # used lb, status}, in use order (each insert goes to the end).
+  @d63_hop [
+    {"Yakima Chief Hops", "Summit Cone A", 300, "11.2", "11", "11", "depleted"},
+    {"BSG", "Summit Cone B", 200, "10.8", "22", nil, "expired"},
+    {"Yakima Chief Hops", "Summit Cone C", 100, "11.5", "33", nil, "available"}
+  ]
+
+  defp seed_d63_hop(u, today) do
+    hops = Repo.one(from(c in IngredientCategory, where: c.key == "hops", select: c.id))
+
+    parties =
+      Map.new(
+        Repo.all(from(p in Party, where: p.name in ["Yakima Chief Hops", "BSG"])),
+        &{&1.name, &1}
+      )
+
+    alpha = Repo.get_by(RockcutApi.Ingredients.FeatureType, key: "alpha_acid_pct")
+
+    if hops && map_size(parties) == 2 && alpha do
+      hop = Repo.insert!(%Ingredient{name: "#{@seed_tag} Summit Cone", category_id: hops})
+
+      products =
+        Map.new(parties, fn {name, party} ->
+          product = %Product{
+            ingredient_id: hop.id,
+            manufacturer_party_id: party.id,
+            form: "T90 Pellet",
+            unit: "lb"
+          }
+
+          {name, Repo.insert!(product)}
+        end)
+
+      {pack_name, pack_size} = RockcutApi.Ingredients.Catalog.fixed_pack("hops")
+
+      for {maker, number, days_ago, aa, opening, used, status} <- @d63_hop do
+        received = Date.add(today, -days_ago)
+
+        lot =
+          UseOrder.insert_lot!(%IngredientLot{
+            ingredient_id: hop.id,
+            product_id: products[maker].id,
+            supplier_party_id: parties[maker].id,
+            pack_name: pack_name,
+            pack_size: pack_size,
+            lot_number: "#{@seed_tag} #{number}",
+            crop_year: received.year,
+            received_date: received,
+            status: status
+          })
+
+        Repo.insert!(%LotFeatureValue{
+          lot_id: lot.id,
+          feature_type_id: alpha.id,
+          value: Decimal.new(aa)
+        })
+
+        movements =
+          [{"opening", Decimal.new(opening), "Opening amount"}] ++
+            if(used, do: [{"used", Decimal.negate(Decimal.new(used)), "Used"}], else: [])
+
+        for {kind, quantity, note} <- movements do
+          Repo.insert!(%Movement{
+            lot_id: lot.id,
+            kind: kind,
+            quantity: quantity,
+            occurred_on: received,
+            note: "#{@seed_tag} #{note}",
+            entered_by_id: u["brewer1"].id
+          })
+        end
+      end
+    else
+      Logger.info("Synthetic setup: no Hops, Yakima Chief Hops or BSG; no [SEED] hop.")
+    end
+
+    :ok
   end
 
   ## Yeast (D64 Stop 4)

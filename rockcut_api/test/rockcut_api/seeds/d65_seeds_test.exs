@@ -132,8 +132,8 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
              :count
            ) == grain
 
-    # D63: Pink Boots '24 and EKG.
-    assert hops == 27 + 2 and grain == 44
+    # D63: Pink Boots '24, EKG and the [SEED] hop's two.
+    assert hops == 27 + 2 + 2 and grain == 44
   end
 
   test "spot checks: Gypsum, Strawberry, Black Strap Molasses, Whirlfloc T, SoNature Lime, the spices" do
@@ -253,10 +253,11 @@ defmodule RockcutApi.Seeds.D65SeedsTest do
       Repo.all(
         from p in Product,
           join: i in assoc(p, :ingredient),
-          # D64 adds two [SEED] yeast products of its own (`d64_seeds_test`).
+          # D64 adds two [SEED] yeast products of its own (`d64_seeds_test`),
+          # D63 a [SEED] hop's (`hop_seeds_test`).
           where:
             like(i.name, "[SEED]%") and
-              i.category_id not in ^RockcutApi.Ingredients.Catalog.category_ids(["yeast"]),
+              i.category_id not in ^RockcutApi.Ingredients.Catalog.category_ids(["yeast", "hops"]),
           order_by: i.name,
           preload: [:lots, offers: :prices],
           select: {i.name, p}
