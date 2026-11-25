@@ -232,8 +232,8 @@ test.describe('at 360 px', () => {
   test('Process Aids, a jug of 10,000 mL and its product page have no sideways scroll', async ({ page }) => {
     const supplier = await makeSupplier('D63 phone', null)
     const ferm = await makeD65Product((await makeD65Ingredient('Ferm phone', 'Process Aids')).id, 'Liquid', 'mL')
-    await offer(ferm.id, supplier.id, 'jug', '10000', '355.00')
     await makeD65Lot(ferm, '12500.5')
+    await offer(ferm.id, supplier.id, 'jug', '10000', '355.00')
     await page.goto(`/ingredients?category=${await categoryId('Process Aids')}`)
     await expect(page.getByTestId(`product-card-${ferm.id}`)).toContainText('Liquid · mL · None')
     await expectNoSidewaysScroll(page)
