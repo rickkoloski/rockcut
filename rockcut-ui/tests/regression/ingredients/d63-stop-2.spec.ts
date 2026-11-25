@@ -174,7 +174,7 @@ test.describe('the list', () => {
     await expect(page.getByTestId('use-order')).toContainText('Brewing takes the first lot with stock. New lots go to the end.')
     await expect(row(page, a)).toContainText(hop.company.name)
     await expect(row(page, b)).toContainText(hop.other.name)
-    await expect(row(page, a)).toContainText('2025 · 12.5% AA · 1 box')
+    await expect(row(page, a)).toContainText('2025 · 12.50% AA · 1 box')
     await expect(page.getByTestId(`use-order-place-${c}`)).toHaveText('3')
     await expect(inUse(page, a)).toBeVisible()
 
