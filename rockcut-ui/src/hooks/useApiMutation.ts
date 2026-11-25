@@ -1,5 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { hashKey, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
+import { dropWhenLeft } from '../lib/dropWhenLeft'
 import type { ApiResponse } from '../lib/types'
 
 interface MutationConfig<T> {
@@ -35,14 +36,26 @@ export function useApiUpdate<T>(pathFn: (id: number) => string, config: Mutation
   })
 }
 
-export function useApiDelete(pathFn: (id: number) => string, config: MutationConfig<void>) {
+interface DeleteConfig extends MutationConfig<void> {
+  /**
+   * The deleted row's own detail query, on the page a delete leaves: the page
+   * isn't refetched (a 404) on its way out, and once it's left the row is
+   * forgotten, so Back says "not found" (D63, local QA gap 3).
+   */
+  rowKey?: (id: number) => unknown[]
+}
+
+export function useApiDelete(pathFn: (id: number) => string, config: DeleteConfig) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: number) => {
       await api.delete(pathFn(id))
     },
-    onSuccess: () => {
-      config.invalidateKeys.forEach((key) => qc.invalidateQueries({ queryKey: key }))
+    onSuccess: (_data, id) => {
+      const row = config.rowKey?.(id)
+      const rowHash = row && hashKey(row)
+      config.invalidateKeys.forEach((key) => qc.invalidateQueries({ queryKey: key, predicate: (q) => q.queryHash !== rowHash }))
+      if (row) dropWhenLeft(qc, row)
       config.onSuccess?.()
     },
   })

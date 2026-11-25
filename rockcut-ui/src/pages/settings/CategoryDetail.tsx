@@ -53,7 +53,7 @@ export default function CategoryDetail() {
 
   const deleteCategoryMutation = useApiDelete(
     (catId) => `/api/ingredient_categories/${catId}`,
-    { invalidateKeys: [['ingredient_categories']] },
+    { invalidateKeys: [['ingredient_categories']], rowKey: (rowId) => ['ingredient_category', rowId] },
   );
 
   const deleteFieldMutation = useApiDelete(

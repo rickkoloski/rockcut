@@ -61,7 +61,7 @@ export default function IngredientDetail() {
 
   const deleteIngredient = useApiDelete(
     (delId) => `/api/ingredients/${delId}`,
-    { invalidateKeys: [['ingredients']] }
+    { invalidateKeys: [['ingredients']], rowKey: (rowId) => ['ingredient', rowId] }
   )
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
